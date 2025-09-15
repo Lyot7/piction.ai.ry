@@ -2,12 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../themes/app_theme.dart';
+import '../models/challenge.dart' as models;
+import '../services/game_service.dart';
+import '../services/stable_diffusion_service.dart';
 import 'results_screen.dart';
-import 'challenge_creation_screen.dart';
 
 /// Écran de jeu principal
 class GameScreen extends StatefulWidget {
-  final List<Challenge> challenges;
+  final List<models.Challenge> challenges;
   const GameScreen({super.key, required this.challenges});
 
   @override
@@ -22,7 +24,7 @@ class _GameScreenState extends State<GameScreen> {
 
   int _currentChallengeIndex = 0;
   int _scoreTeam1 = 100;
-  int _scoreTeam2 = 100;
+  final int _scoreTeam2 = 100;
   int _regenCount = 0;
 
   // Saisie du devineur
@@ -64,17 +66,66 @@ class _GameScreenState extends State<GameScreen> {
       _isGenerating = true;
     });
 
-    // TODO: intégrer l'appel réel à l'API StableDiffusion.
-    // Simulation: attente 2 secondes et attribution d'une image de placeholder.
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() {
-      _imageUrl = 'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/600/400';
-      _isGenerating = false;
-      if (isRegen) {
-        _regenCount++;
-        _applyScoreDelta(-10); // coût de régénération
+    try {
+      final gameService = GameService();
+      final currentChallenge = _getCurrentChallenge();
+      
+      if (currentChallenge == null) {
+        throw Exception('Aucun challenge actuel');
       }
-    });
+
+      // Générer le prompt à partir du challenge
+      final prompt = _buildPromptFromChallenge(currentChallenge);
+      
+      // Récupérer la session de jeu
+      final gameSession = gameService.currentGameSession;
+      if (gameSession == null) {
+        throw Exception('Aucune session de jeu active');
+      }
+      
+      // Générer l'image avec StableDiffusion via l'API de jeu
+      final imageUrl = await StableDiffusionService.generateImageWithRetry(
+        prompt, 
+        gameSession.id, 
+        currentChallenge.id
+      );
+      
+      setState(() {
+        _imageUrl = imageUrl;
+        _isGenerating = false;
+        if (isRegen) {
+          _regenCount++;
+          _applyScoreDelta(-10); // coût de régénération
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isGenerating = false;
+      });
+      
+      // Afficher une erreur à l'utilisateur
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la génération: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Construit un prompt à partir du challenge
+  String _buildPromptFromChallenge(models.Challenge challenge) {
+    return '${challenge.firstWord} ${challenge.secondWord} ${challenge.thirdWord} ${challenge.fourthWord} ${challenge.fifthWord}';
+  }
+
+  /// Récupère le challenge actuel
+  models.Challenge? _getCurrentChallenge() {
+    if (_currentChallengeIndex < 0 || _currentChallengeIndex >= widget.challenges.length) {
+      return null;
+    }
+    return widget.challenges[_currentChallengeIndex];
   }
 
   void _applyScoreDelta(int delta) {
@@ -85,22 +136,59 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  void _submitGuess() {
-    final guess = _guessController.text.trim().toLowerCase();
+  Future<void> _submitGuess() async {
+    final guess = _guessController.text.trim();
     if (guess.isEmpty) return;
 
-    final challenge = widget.challenges[_currentChallengeIndex];
-    final target1 = challenge.input1.toLowerCase();
-    final target2 = challenge.input2.toLowerCase();
+    try {
+      final gameService = GameService();
+      final currentChallenge = _getCurrentChallenge();
+      
+      if (currentChallenge == null) {
+        throw Exception('Aucun challenge actuel');
+      }
 
-    if (guess.contains(target1) || guess.contains(target2)) {
-      _applyScoreDelta(25);
-      _nextChallenge();
-    } else {
-      _applyScoreDelta(-1);
+      // Vérifier si la réponse est correcte
+      final isCorrect = _checkAnswer(guess, currentChallenge);
+      
+      // Envoyer la réponse à l'API
+      await gameService.answerChallenge(currentChallenge.id, guess, isCorrect);
+      
+      if (isCorrect) {
+        _applyScoreDelta(25);
+        _nextChallenge();
+      } else {
+        _applyScoreDelta(-1);
+      }
+
+      _guessController.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de l\'envoi de la réponse: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
     }
+  }
 
-    _guessController.clear();
+  /// Vérifie si la réponse est correcte
+  bool _checkAnswer(String guess, models.Challenge challenge) {
+    final guessLower = guess.toLowerCase();
+    final target1 = challenge.firstWord.toLowerCase();
+    final target2 = challenge.secondWord.toLowerCase();
+    final target3 = challenge.thirdWord.toLowerCase();
+    final target4 = challenge.fourthWord.toLowerCase();
+    final target5 = challenge.fifthWord.toLowerCase();
+
+    // Vérifier si la réponse contient les mots clés
+    return guessLower.contains(target1) || 
+           guessLower.contains(target2) || 
+           guessLower.contains(target3) || 
+           guessLower.contains(target4) || 
+           guessLower.contains(target5);
   }
 
   void _nextChallenge() {
@@ -152,7 +240,7 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  Widget _buildHeader(Challenge challenge) {
+  Widget _buildHeader(models.Challenge challenge) {
     return Row(
       children: [
         _buildTimerChip(),
@@ -180,8 +268,8 @@ class _GameScreenState extends State<GameScreen> {
     return Chip(
       avatar: CircleAvatar(backgroundColor: color, radius: 8),
       label: Text('$label: $score'),
-      backgroundColor: color.withOpacity(0.08),
-      side: BorderSide(color: color.withOpacity(0.3)),
+      backgroundColor: color.withValues(alpha: 0.08),
+      side: BorderSide(color: color.withValues(alpha: 0.3)),
     );
   }
 
@@ -216,7 +304,7 @@ class _GameScreenState extends State<GameScreen> {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Center(child: CircularProgressIndicator()),
@@ -235,12 +323,12 @@ class _GameScreenState extends State<GameScreen> {
             decoration: const InputDecoration(
               hintText: 'Votre proposition...',
             ),
-            onSubmitted: (_) => _submitGuess(),
+            onSubmitted: (_) async => await _submitGuess(),
           ),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: _submitGuess,
+          onPressed: () async => await _submitGuess(),
           icon: const Icon(Icons.send),
           color: AppTheme.primaryColor,
         ),

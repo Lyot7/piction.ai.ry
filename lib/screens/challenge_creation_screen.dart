@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
+import '../models/challenge.dart' as models;
+import '../services/game_service.dart';
 import 'game_screen.dart';
 
 /// Écran de création des challenges avant le début du jeu
@@ -13,7 +15,6 @@ class ChallengeCreationScreen extends StatefulWidget {
 
 class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final List<Challenge> _challenges = List.generate(4, (index) => Challenge());
   
   // Contrôleurs pour les champs de texte
   final List<List<TextEditingController>> _controllers = [];
@@ -74,15 +75,11 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   const SizedBox(height: 24),
                   
                   // Challenges
-                  ...AnimationConfiguration.toStaggeredList(
-                    duration: const Duration(milliseconds: 300),
-                    childAnimationBuilder: (widget) => SlideAnimation(
+                  ...List.generate(
+                    4,
+                    (index) => SlideAnimation(
                       verticalOffset: 30.0,
-                      child: FadeInAnimation(child: widget),
-                    ),
-                    children: List.generate(
-                      4,
-                      (index) => _buildChallengeCard(index),
+                      child: FadeInAnimation(child: _buildChallengeCard(index)),
                     ),
                   ),
                 ],
@@ -96,7 +93,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
 
   Widget _buildInstructions() {
     return Card(
-      color: AppTheme.primaryColor.withOpacity(0.1),
+      color: AppTheme.primaryColor.withValues(alpha: 0.1),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -205,7 +202,6 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   hintText: 'objet...',
                 ),
                 validator: (value) => value?.isEmpty == true ? 'Requis' : null,
-                onChanged: (value) => _challenges[index].input1 = value,
               ),
             ),
           ],
@@ -226,7 +222,6 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   hintText: 'lieu...',
                 ),
                 validator: (value) => value?.isEmpty == true ? 'Requis' : null,
-                onChanged: (value) => _challenges[index].input2 = value,
               ),
             ),
           ],
@@ -258,11 +253,6 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                     ),
                   ),
                   validator: (value) => value?.isEmpty == true ? 'Requis' : null,
-                  onChanged: (value) {
-                    if (i == 0) _challenges[index].forbidden1 = value;
-                    if (i == 1) _challenges[index].forbidden2 = value;
-                    if (i == 2) _challenges[index].forbidden3 = value;
-                  },
                 ),
               ),
               if (i < 2) const SizedBox(width: 8),
@@ -274,46 +264,74 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   }
 
   bool _canSubmit() {
-    return _challenges.every((challenge) => 
-      challenge.input1.isNotEmpty &&
-      challenge.input2.isNotEmpty &&
-      challenge.forbidden1.isNotEmpty &&
-      challenge.forbidden2.isNotEmpty &&
-      challenge.forbidden3.isNotEmpty
-    );
+    for (int i = 0; i < 4; i++) {
+      final controllers = _controllers[i];
+      if (controllers.length < 6) return false;
+      
+      if (controllers[0].text.trim().isEmpty || // firstWord
+          controllers[1].text.trim().isEmpty || // secondWord
+          controllers[2].text.trim().isEmpty || // thirdWord
+          controllers[3].text.trim().isEmpty || // fourthWord
+          controllers[4].text.trim().isEmpty || // fifthWord
+          controllers[5].text.trim().isEmpty) { // forbiddenWords
+        return false;
+      }
+    }
+    return true;
   }
 
-  void _submitChallenges() {
+  Future<void> _submitChallenges() async {
     if (_formKey.currentState?.validate() == true) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => GameScreen(challenges: _challenges),
-        ),
-      );
+      try {
+        final gameService = GameService();
+        
+        // Envoyer chaque challenge à l'API
+        for (int i = 0; i < 4; i++) {
+          final challenge = _buildChallengeFromForm(i);
+          await gameService.sendChallenge(
+            challenge.firstWord,
+            challenge.secondWord,
+            challenge.thirdWord,
+            challenge.fourthWord,
+            challenge.fifthWord,
+            challenge.forbiddenWords,
+          );
+        }
+        
+        // Navigation vers l'écran de jeu
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const GameScreen(challenges: []),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur lors de l\'envoi des challenges: ${e.toString()}'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
+      }
     }
   }
-}
 
-/// Modèle pour représenter un challenge
-class Challenge {
-  String input1 = '';
-  String input2 = '';
-  String forbidden1 = '';
-  String forbidden2 = '';
-  String forbidden3 = '';
-
-  bool get isComplete =>
-    input1.isNotEmpty &&
-    input2.isNotEmpty &&
-    forbidden1.isNotEmpty &&
-    forbidden2.isNotEmpty &&
-    forbidden3.isNotEmpty;
-
-  String get description => 'Un/Une $input1 Sur/Dans Un/Une $input2';
-  
-  List<String> get forbiddenWords => [forbidden1, forbidden2, forbidden3];
-
-  @override
-  String toString() => '$description (Interdits: ${forbiddenWords.join(', ')})';
+  /// Construit un challenge à partir du formulaire
+  models.Challenge _buildChallengeFromForm(int index) {
+    final controllers = _controllers[index];
+    return models.Challenge(
+      id: '', // L'API générera l'ID
+      gameSessionId: '', // Sera défini par l'API
+      firstWord: controllers[0].text.trim(),
+      secondWord: controllers[1].text.trim(),
+      thirdWord: controllers[2].text.trim(),
+      fourthWord: controllers[3].text.trim(),
+      fifthWord: controllers[4].text.trim(),
+      forbiddenWords: controllers[5].text.split(',').map((word) => word.trim()).where((word) => word.isNotEmpty).toList(),
+    );
+  }
 }

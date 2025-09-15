@@ -32,7 +32,7 @@ class AppTheme {
         secondary: secondaryColor,
         tertiary: accentColor,
         surface: surfaceColor,
-        surface: backgroundColor,
+        surfaceContainerHighest: backgroundColor,
         error: errorColor,
       ),
       
@@ -82,7 +82,7 @@ class AppTheme {
       ),
       
       // Card theme
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surfaceColor,
         elevation: 2,
         shadowColor: Colors.black.withValues(alpha: 0.1),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
+import '../services/game_service.dart';
 import 'lobby_screen.dart';
 
 /// Écran d'accueil principal de Piction.ia.ry
@@ -10,13 +11,25 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Piction.ia.ry'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await GameService().logout();
+            },
+            tooltip: 'Se déconnecter',
+          ),
+        ],
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              AppTheme.primaryColor.withOpacity(0.1),
+              AppTheme.primaryColor.withValues(alpha: 0.1),
               AppTheme.backgroundColor,
             ],
           ),
@@ -25,26 +38,39 @@ class HomeScreen extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: AnimationLimiter(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: AnimationConfiguration.toStaggeredList(
-                  duration: const Duration(milliseconds: 500),
-                  childAnimationBuilder: (widget) => SlideAnimation(
-                    verticalOffset: 50.0,
-                    child: FadeInAnimation(child: widget),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: MediaQuery.of(context).size.height - 48, // Account for padding
                   ),
-                  children: [
-                    // Logo et titre
-                    _buildHeader(context),
-                    const SizedBox(height: 60),
-                    
-                    // Boutons principaux
-                    _buildMainButtons(context),
-                    const SizedBox(height: 40),
-                    
-                    // Description du jeu
-                    _buildGameDescription(),
-                  ],
+                  child: AnimationConfiguration.staggeredList(
+                    position: 0,
+                    duration: const Duration(milliseconds: 500),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Logo et titre
+                        SlideAnimation(
+                          verticalOffset: 50.0,
+                          child: FadeInAnimation(child: _buildHeader(context)),
+                        ),
+                        const SizedBox(height: 60),
+                        
+                        // Boutons principaux
+                        SlideAnimation(
+                          verticalOffset: 50.0,
+                          child: FadeInAnimation(child: _buildMainButtons(context)),
+                        ),
+                        const SizedBox(height: 40),
+                        
+                        // Description du jeu
+                        SlideAnimation(
+                          verticalOffset: 50.0,
+                          child: FadeInAnimation(child: _buildGameDescription()),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),

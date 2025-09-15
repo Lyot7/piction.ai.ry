@@ -27,10 +27,10 @@ class ResultsScreen extends StatelessWidget {
             end: Alignment.bottomCenter,
             colors: [
               winner == 'Équipe 1' 
-                  ? AppTheme.team1Color.withOpacity(0.2)
+                  ? AppTheme.team1Color.withValues(alpha: 0.2)
                   : winner == 'Équipe 2'
-                      ? AppTheme.team2Color.withOpacity(0.2)
-                      : AppTheme.primaryColor.withOpacity(0.1),
+                      ? AppTheme.team2Color.withValues(alpha: 0.2)
+                      : AppTheme.primaryColor.withValues(alpha: 0.1),
               AppTheme.backgroundColor,
             ],
           ),
@@ -39,29 +39,38 @@ class ResultsScreen extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: AnimationLimiter(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: AnimationConfiguration.toStaggeredList(
-                  duration: const Duration(milliseconds: 600),
-                  childAnimationBuilder: (widget) => SlideAnimation(
-                    verticalOffset: 50.0,
-                    child: FadeInAnimation(child: widget),
-                  ),
+              child: AnimationConfiguration.staggeredList(
+                position: 0,
+                duration: const Duration(milliseconds: 600),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Icône et titre de fin
-                    _buildHeader(winner),
+                    SlideAnimation(
+                      verticalOffset: 50.0,
+                      child: FadeInAnimation(child: _buildHeader(winner)),
+                    ),
                     const SizedBox(height: 40),
                     
                     // Scores finaux
-                    _buildScoresCard(),
+                    SlideAnimation(
+                      verticalOffset: 50.0,
+                      child: FadeInAnimation(child: _buildScoresCard()),
+                    ),
                     const SizedBox(height: 40),
                     
                     // Statistiques (optional future feature)
-                    _buildStatsCard(),
+                    SlideAnimation(
+                      verticalOffset: 50.0,
+                      child: FadeInAnimation(child: _buildStatsCard()),
+                    ),
                     const SizedBox(height: 40),
                     
                     // Boutons d'action
-                    _buildActionButtons(context),
+                    SlideAnimation(
+                      verticalOffset: 50.0,
+                      child: FadeInAnimation(child: _buildActionButtons(context)),
+                    ),
                   ],
                 ),
               ),
@@ -93,7 +102,7 @@ class ResultsScreen extends StatelessWidget {
                         : winner == 'Équipe 1'
                             ? AppTheme.team1Color
                             : AppTheme.team2Color)
-                    .withOpacity(0.3),
+                    .withValues(alpha: 0.3),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -182,10 +191,10 @@ class ResultsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: teamColor.withOpacity(0.1),
+        color: teamColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isWinner ? teamColor : teamColor.withOpacity(0.3),
+          color: isWinner ? teamColor : teamColor.withValues(alpha: 0.3),
           width: isWinner ? 2 : 1,
         ),
       ),

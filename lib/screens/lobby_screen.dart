@@ -46,27 +46,38 @@ class _LobbyScreenState extends State<LobbyScreen> {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: AnimationLimiter(
-            child: Column(
-              children: AnimationConfiguration.toStaggeredList(
-                duration: const Duration(milliseconds: 300),
-                childAnimationBuilder: (widget) => SlideAnimation(
-                  verticalOffset: 30.0,
-                  child: FadeInAnimation(child: widget),
-                ),
+            child: AnimationConfiguration.staggeredList(
+              position: 0,
+              duration: const Duration(milliseconds: 300),
+              child: Column(
                 children: [
                   // Code de partie
-                  _buildGameCodeCard(),
+                  SlideAnimation(
+                    verticalOffset: 30.0,
+                    child: FadeInAnimation(child: _buildGameCodeCard()),
+                  ),
                   const SizedBox(height: 24),
                   
                   // Statut de la partie
-                  _buildGameStatus(),
+                  SlideAnimation(
+                    verticalOffset: 30.0,
+                    child: FadeInAnimation(child: _buildGameStatus()),
+                  ),
                   const SizedBox(height: 24),
                   
                   // Équipes
-                  Expanded(child: _buildTeams()),
+                  Expanded(
+                    child: SlideAnimation(
+                      verticalOffset: 30.0,
+                      child: FadeInAnimation(child: _buildTeams()),
+                    ),
+                  ),
                   
                   // Bouton d'action
-                  _buildActionButton(),
+                  SlideAnimation(
+                    verticalOffset: 30.0,
+                    child: FadeInAnimation(child: _buildActionButton()),
+                  ),
                 ],
               ),
             ),
@@ -78,7 +89,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   Widget _buildGameCodeCard() {
     return Card(
-      color: AppTheme.primaryColor.withOpacity(0.1),
+      color: AppTheme.primaryColor.withValues(alpha: 0.1),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -234,12 +245,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: player != null 
-            ? roleColor.withOpacity(0.1) 
+            ? roleColor.withValues(alpha: 0.1) 
             : AppTheme.backgroundColor,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: player != null 
-              ? roleColor.withOpacity(0.3) 
+              ? roleColor.withValues(alpha: 0.3) 
               : AppTheme.textLight,
         ),
       ),
