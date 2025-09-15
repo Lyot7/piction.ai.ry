@@ -175,6 +175,15 @@ class GameService {
     }
   }
 
+  /// Récupère la liste des sessions disponibles
+  Future<List<GameSession>> getAvailableRooms() async {
+    try {
+      return await _apiService.getAvailableRooms();
+    } catch (e) {
+      throw Exception('Erreur lors de la récupération des sessions disponibles: $e');
+    }
+  }
+
   // ===== GESTION DES CHALLENGES =====
 
   /// Envoie un challenge
@@ -231,18 +240,6 @@ class GameService {
     }
   }
 
-  /// Soumet un dessin pour un challenge
-  Future<void> drawForChallenge(String challengeId, String prompt) async {
-    if (_currentGameSession == null) {
-      throw Exception('Aucune session active');
-    }
-
-    try {
-      await _apiService.drawForChallenge(_currentGameSession!.id, challengeId, prompt);
-    } catch (e) {
-      throw Exception('Erreur lors de l\'envoi du dessin: $e');
-    }
-  }
 
   /// Envoie une réponse pour un challenge
   Future<void> answerChallenge(String challengeId, String answer, bool isResolved) async {

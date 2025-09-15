@@ -72,33 +72,49 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo et titre
-                  _buildHeader(),
-                  const SizedBox(height: 48),
-                  
-                  // Formulaire
-                  _buildForm(),
-                  const SizedBox(height: 24),
-                  
-                  // Message d'erreur
-                  if (_errorMessage != null) _buildErrorMessage(),
-                  
-                  // Bouton d'action
-                  _buildActionButton(),
-                  const SizedBox(height: 24),
-                  
-                  // Lien de basculement
-                  _buildToggleLink(),
-                ],
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight - MediaQuery.of(context).viewInsets.bottom - 48,
+                  ),
+                  child: IntrinsicHeight(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Logo et titre
+                          _buildHeader(),
+                          const SizedBox(height: 48),
+                          
+                          // Formulaire
+                          _buildForm(),
+                          const SizedBox(height: 24),
+                          
+                          // Message d'erreur
+                          if (_errorMessage != null) _buildErrorMessage(),
+                          
+                          // Bouton d'action
+                          _buildActionButton(),
+                          const SizedBox(height: 24),
+                          
+                          // Lien de basculement
+                          _buildToggleLink(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

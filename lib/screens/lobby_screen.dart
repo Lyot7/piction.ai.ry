@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../themes/app_theme.dart';
-import 'challenge_creation_screen.dart';
+import '../models/game_session.dart';
+import '../models/player.dart';
+import '../services/game_service.dart';
+import '../services/deep_link_service.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
-  final bool isHost;
+  final GameSession gameSession;
 
   const LobbyScreen({
     super.key,
-    required this.isHost,
+    required this.gameSession,
   });
 
   @override
@@ -17,27 +22,88 @@ class LobbyScreen extends StatefulWidget {
 }
 
 class _LobbyScreenState extends State<LobbyScreen> {
-  // Simulation des joueurs connectés
-  final List<Player> _players = [
-    Player(id: '1', name: 'Vous', isReady: true),
-  ];
+  final GameService _gameService = GameService();
+  late GameSession _gameSession;
+  bool _isLoading = false;
+  String? _errorMessage;
 
-  // Code de la partie (simulé)
-  final String _gameCode = 'ABC123';
+  @override
+  void initState() {
+    super.initState();
+    _gameSession = widget.gameSession;
+    _listenToGameSessionUpdates();
+  }
+
+  void _listenToGameSessionUpdates() {
+    _gameService.gameSessionStream.listen((gameSession) {
+      if (gameSession != null && mounted) {
+        setState(() {
+          _gameSession = gameSession;
+        });
+      }
+    });
+  }
+
+  bool get _isHost {
+    final currentPlayer = _gameService.currentPlayer;
+    return currentPlayer != null && _gameSession.players.isNotEmpty && 
+           _gameSession.players.any((player) => player.id == currentPlayer.id);
+  }
+
+  bool _canStartGame() {
+    return _gameSession.players.length == 4 && _isHost;
+  }
+
+  Future<void> _startGame() async {
+    if (!_canStartGame()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _gameService.startGameSession();
+      // La navigation vers l'écran de création de challenges se fera automatiquement
+      // via le stream de statut
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lobby'),
+        title: Text('Room ${_gameSession.id}'),
+        backgroundColor: AppTheme.primaryColor,
+        foregroundColor: Colors.white,
         actions: [
-          if (widget.isHost)
+          if (_isHost)
             TextButton.icon(
-              onPressed: _canStartGame() ? _startGame : null,
-              icon: const Icon(Icons.play_arrow, color: Colors.white),
-              label: const Text(
-                'Commencer',
-                style: TextStyle(color: Colors.white),
+              onPressed: _canStartGame() && !_isLoading ? _startGame : null,
+              icon: _isLoading 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.play_arrow, color: Colors.white),
+              label: Text(
+                _isLoading ? 'Démarrage...' : 'Commencer',
+                style: const TextStyle(color: Colors.white),
               ),
             ),
         ],
@@ -46,37 +112,31 @@ class _LobbyScreenState extends State<LobbyScreen> {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: AnimationLimiter(
-            child: AnimationConfiguration.staggeredList(
-              position: 0,
-              duration: const Duration(milliseconds: 300),
-              child: Column(
+            child: Column(
+              children: AnimationConfiguration.toStaggeredList(
+                duration: const Duration(milliseconds: 600),
+                childAnimationBuilder: (widget) => SlideAnimation(
+                  verticalOffset: 30.0,
+                  child: FadeInAnimation(child: widget),
+                ),
                 children: [
-                  // Code de partie
-                  SlideAnimation(
-                    verticalOffset: 30.0,
-                    child: FadeInAnimation(child: _buildGameCodeCard()),
-                  ),
+                  // Message d'erreur
+                  if (_errorMessage != null) ...[
+                    _buildErrorMessage(),
+                    const SizedBox(height: 16),
+                  ],
+                  
+                  // Code de partie et QR Code
+                  _buildGameCodeAndQRCard(),
                   const SizedBox(height: 24),
                   
                   // Statut de la partie
-                  SlideAnimation(
-                    verticalOffset: 30.0,
-                    child: FadeInAnimation(child: _buildGameStatus()),
-                  ),
+                  _buildGameStatus(),
                   const SizedBox(height: 24),
                   
-                  // Équipes
+                  // Liste des joueurs
                   Expanded(
-                    child: SlideAnimation(
-                      verticalOffset: 30.0,
-                      child: FadeInAnimation(child: _buildTeams()),
-                    ),
-                  ),
-                  
-                  // Bouton d'action
-                  SlideAnimation(
-                    verticalOffset: 30.0,
-                    child: FadeInAnimation(child: _buildActionButton()),
+                    child: _buildPlayersList(),
                   ),
                 ],
               ),
@@ -87,36 +147,141 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildGameCodeCard() {
+  Widget _buildErrorMessage() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.errorColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppTheme.errorColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.error_outline,
+            color: AppTheme.errorColor,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: TextStyle(
+                color: AppTheme.errorColor,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameCodeAndQRCard() {
     return Card(
-      color: AppTheme.primaryColor.withValues(alpha: 0.1),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             Text(
               'Code de la partie',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryColor,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
+            
+            // Code de la room et QR Code côte à côte
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _gameCode,
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: AppTheme.primaryColor,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 4,
+                // Code de la room
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        _gameSession.id,
+                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Code à partager',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                IconButton(
-                  onPressed: _copyGameCode,
-                  icon: const Icon(Icons.copy),
-                  color: AppTheme.primaryColor,
-                ),
+                
+                const SizedBox(width: 20),
+                
+                // QR Code
+                if (_isHost) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Column(
+                      children: [
+                        QrImageView(
+                          data: _generateJoinLink(),
+                          version: QrVersions.auto,
+                          size: 100.0,
+                          backgroundColor: Colors.white,
+                          eyeStyle: const QrEyeStyle(
+                            eyeShape: QrEyeShape.square,
+                            color: Colors.black,
+                          ),
+                          dataModuleStyle: const QrDataModuleStyle(
+                            dataModuleShape: QrDataModuleShape.square,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Scanner',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Bouton de partage
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _shareRoom,
+                icon: const Icon(Icons.share),
+                label: const Text('Partager la room'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -125,8 +290,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Widget _buildGameStatus() {
-    final playersCount = _players.length;
-    final readyCount = _players.where((p) => p.isReady).length;
+    final playersCount = _gameSession.players.length;
     
     return Row(
       children: [
@@ -141,12 +305,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
         const SizedBox(width: 16),
         Expanded(
           child: _buildStatusItem(
-            icon: Icons.check_circle,
-            label: 'Prêts',
-            value: '$readyCount/$playersCount',
-            color: readyCount == playersCount && playersCount == 4 
-                ? AppTheme.accentColor 
-                : AppTheme.textSecondary,
+            icon: Icons.schedule,
+            label: 'Statut',
+            value: _getStatusLabel(_gameSession.status),
+            color: _getStatusColor(_gameSession.status),
           ),
         ),
       ],
@@ -172,7 +334,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             ),
             Text(
               value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: color,
                 fontWeight: FontWeight.bold,
               ),
@@ -183,89 +345,98 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildTeams() {
-    return Row(
-      children: [
-        Expanded(child: _buildTeam('Équipe 1', AppTheme.team1Color, 0)),
-        const SizedBox(width: 16),
-        Expanded(child: _buildTeam('Équipe 2', AppTheme.team2Color, 2)),
-      ],
-    );
-  }
-
-  Widget _buildTeam(String teamName, Color teamColor, int startIndex) {
-    final teamPlayers = _players.length > startIndex 
-        ? _players.skip(startIndex).take(2).toList() 
-        : <Player>[];
-    
+  Widget _buildPlayersList() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: teamColor,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  teamName,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: teamColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            Text(
+              'Joueurs connectés',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
-            
-            // Slots de joueurs
-            for (int i = 0; i < 2; i++)
-              _buildPlayerSlot(
-                i < teamPlayers.length ? teamPlayers[i] : null,
-                i == 0 ? 'Dessinateur' : 'Devineur',
-                i == 0 ? AppTheme.drawerColor : AppTheme.guesserColor,
-              ),
+            if (_gameSession.players.isEmpty)
+              Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.people_outline,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'En attente de joueurs...',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...List.generate(4, (index) {
+                final player = index < _gameSession.players.length 
+                    ? _gameSession.players[index] 
+                    : null;
+                return _buildPlayerSlot(index, player);
+              }),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPlayerSlot(Player? player, String role, Color roleColor) {
+  Widget _buildPlayerSlot(int index, Player? player) {
+    final isCurrentPlayer = player != null && 
+        _gameService.currentPlayer?.id == player.id;
+    
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: player != null 
-            ? roleColor.withValues(alpha: 0.1) 
-            : AppTheme.backgroundColor,
+            ? (isCurrentPlayer 
+                ? AppTheme.primaryColor.withValues(alpha: 0.1)
+                : Colors.grey[50])
+            : Colors.grey[100],
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: player != null 
-              ? roleColor.withValues(alpha: 0.3) 
-              : AppTheme.textLight,
+              ? (isCurrentPlayer 
+                  ? AppTheme.primaryColor
+                  : Colors.grey[300]!)
+              : Colors.grey[200]!,
+          width: isCurrentPlayer ? 2 : 1,
         ),
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: player != null ? roleColor : AppTheme.textLight,
-            child: Text(
-              player?.name.substring(0, 1).toUpperCase() ?? '?',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: player != null 
+                  ? _getPlayerColor(player.color)
+                  : Colors.grey[300],
+              shape: BoxShape.circle,
             ),
+            child: player != null
+                ? Icon(
+                    Icons.person,
+                    color: Colors.white,
+                    size: 20,
+                  )
+                : Icon(
+                    Icons.person_outline,
+                    color: Colors.grey[500],
+                    size: 20,
+                  ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -273,85 +444,119 @@ class _LobbyScreenState extends State<LobbyScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  player?.name ?? 'En attente...',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: player != null ? AppTheme.textPrimary : AppTheme.textLight,
+                  player?.name ?? 'Slot ${index + 1}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: player != null 
+                        ? (isCurrentPlayer 
+                            ? AppTheme.primaryColor
+                            : Colors.black87)
+                        : Colors.grey[500],
                   ),
                 ),
-                Text(
-                  role,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: roleColor,
+                if (player != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Équipe ${player.color == 'red' ? 'Rouge' : 'Bleue'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
-          if (player != null)
-            Icon(
-              player.isReady ? Icons.check_circle : Icons.schedule,
-              color: player.isReady ? AppTheme.accentColor : AppTheme.textSecondary,
-              size: 20,
+          if (isCurrentPlayer)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Vous',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildActionButton() {
-    if (!widget.isHost) {
-      return SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _toggleReady,
-          child: Text(_players.first.isReady ? 'Annuler' : 'Je suis prêt !'),
-        ),
-      );
+  Color _getPlayerColor(String? color) {
+    switch (color) {
+      case 'red':
+        return AppTheme.team1Color;
+      case 'blue':
+        return AppTheme.team2Color;
+      default:
+        return Colors.grey;
     }
+  }
+
+  String _getStatusLabel(String status) {
+    switch (status) {
+      case 'lobby':
+        return 'En attente';
+      case 'challenge':
+        return 'Création';
+      case 'drawing':
+        return 'Dessin';
+      case 'guessing':
+        return 'Devine';
+      case 'finished':
+        return 'Terminée';
+      default:
+        return status;
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'lobby':
+        return Colors.orange;
+      case 'challenge':
+        return Colors.blue;
+      case 'drawing':
+        return Colors.purple;
+      case 'guessing':
+        return Colors.green;
+      case 'finished':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Génère le lien de partage pour rejoindre la room
+  String _generateJoinLink() {
+    final deepLinkService = DeepLinkService();
+    return deepLinkService.generateRoomLink(_gameSession.id);
+  }
+
+  /// Partage la room avec un lien direct
+  void _shareRoom() {
+    final deepLinkService = DeepLinkService();
+    final joinLink = deepLinkService.generateRoomLink(_gameSession.id);
     
-    return const SizedBox.shrink();
-  }
-
-  bool _canStartGame() {
-    return _players.length == 4 && _players.every((p) => p.isReady);
-  }
-
-  void _copyGameCode() {
+    final shareText = 'Rejoignez ma partie Piction.ia.ry !\n\n'
+        'Code de room: ${_gameSession.id}\n'
+        'Lien direct: $joinLink\n\n'
+        'Téléchargez l\'app et rejoignez la partie !';
+    
+    Clipboard.setData(ClipboardData(text: shareText));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Code $_gameCode copié !'),
-        backgroundColor: AppTheme.accentColor,
+        content: const Text('Lien de partage copié dans le presse-papiers'),
+        backgroundColor: AppTheme.primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
-
-  void _toggleReady() {
-    setState(() {
-      _players.first.isReady = !_players.first.isReady;
-    });
-  }
-
-  void _startGame() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const ChallengeCreationScreen(),
-      ),
-    );
-  }
-}
-
-/// Modèle simple pour représenter un joueur
-class Player {
-  final String id;
-  final String name;
-  bool isReady;
-
-  Player({
-    required this.id,
-    required this.name,
-    this.isReady = false,
-  });
 }

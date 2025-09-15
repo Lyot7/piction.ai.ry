@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import 'home_screen.dart';
-import 'lobby_screen.dart';
 
 /// Écran des résultats finaux de la partie
 class ResultsScreen extends StatelessWidget {
@@ -335,7 +334,7 @@ class ResultsScreen extends StatelessWidget {
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (context) => const LobbyScreen(isHost: true),
+        builder: (context) => const HomeScreen(),
       ),
       (route) => false,
     );

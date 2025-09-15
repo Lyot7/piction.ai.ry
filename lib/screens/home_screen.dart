@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_service.dart';
-import 'lobby_screen.dart';
+import 'create_room_screen.dart';
+import 'join_room_screen.dart';
 
 /// Écran d'accueil principal de Piction.ia.ry
 class HomeScreen extends StatelessWidget {
@@ -135,7 +136,7 @@ class HomeScreen extends StatelessWidget {
           width: double.infinity,
           height: 56,
           child: ElevatedButton(
-            onPressed: () => _navigateToLobby(context, isHost: true),
+            onPressed: () => _navigateToCreateRoom(context),
             child: const Text('Créer une partie'),
           ),
         ),
@@ -146,7 +147,7 @@ class HomeScreen extends StatelessWidget {
           width: double.infinity,
           height: 56,
           child: OutlinedButton(
-            onPressed: () => _navigateToLobby(context, isHost: false),
+            onPressed: () => _navigateToJoinRoom(context),
             child: const Text('Rejoindre une partie'),
           ),
         ),
@@ -211,11 +212,20 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _navigateToLobby(BuildContext context, {required bool isHost}) {
+  void _navigateToCreateRoom(BuildContext context) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LobbyScreen(isHost: isHost),
+        builder: (context) => const CreateRoomScreen(),
+      ),
+    );
+  }
+
+  void _navigateToJoinRoom(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const JoinRoomScreen(),
       ),
     );
   }

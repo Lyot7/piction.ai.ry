@@ -18,7 +18,7 @@ class GameSession {
 
   factory GameSession.fromJson(Map<String, dynamic> json) {
     return GameSession(
-      id: json['id'] ?? json['_id'] ?? json['gameSessionId'] ?? '',
+      id: (json['id'] ?? json['_id'] ?? json['gameSessionId'] ?? '').toString(),
       status: json['status'] ?? 'lobby',
       players: (json['players'] as List<dynamic>?)
           ?.map((playerJson) => Player.fromJson(playerJson))

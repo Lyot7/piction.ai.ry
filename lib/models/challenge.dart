@@ -38,8 +38,8 @@ class Challenge {
 
   factory Challenge.fromJson(Map<String, dynamic> json) {
     return Challenge(
-      id: json['id'] ?? json['_id'] ?? json['challengeId'] ?? '',
-      gameSessionId: json['gameSessionId'] ?? '',
+      id: (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString(),
+      gameSessionId: (json['gameSessionId'] ?? '').toString(),
       firstWord: json['first_word'] ?? '',
       secondWord: json['second_word'] ?? '',
       thirdWord: json['third_word'] ?? '',
@@ -52,8 +52,8 @@ class Challenge {
       imageUrl: json['imageUrl'] ?? json['image_url'],
       answer: json['answer'],
       isResolved: json['is_resolved'],
-      drawerId: json['drawerId'] ?? json['drawer_id'],
-      guesserId: json['guesserId'] ?? json['guesser_id'],
+      drawerId: (json['drawerId'] ?? json['drawer_id'] ?? '').toString(),
+      guesserId: (json['guesserId'] ?? json['guesser_id'] ?? '').toString(),
       createdAt: json['createdAt'] != null 
           ? DateTime.tryParse(json['createdAt']) 
           : null,

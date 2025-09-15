@@ -212,6 +212,19 @@ class ApiService {
     _handleResponse(response);
   }
 
+  /// Récupère la liste des sessions disponibles
+  Future<List<GameSession>> getAvailableRooms() async {
+    final response = await _request('GET', '/game_sessions/available');
+    _handleResponse(response);
+    
+    final data = jsonDecode(response.body);
+    final sessionsList = data is List ? data : (data['items'] ?? []);
+    
+    return sessionsList
+        .map<GameSession>((sessionJson) => GameSession.fromJson(sessionJson))
+        .toList();
+  }
+
   // ===== CHALLENGES =====
 
   /// Envoie un challenge
@@ -255,19 +268,6 @@ class ApiService {
         .toList();
   }
 
-  /// Soumet un dessin/prompt pour un challenge
-  Future<void> drawForChallenge(
-    String gameSessionId,
-    String challengeId,
-    String prompt,
-  ) async {
-    final response = await _request(
-      'POST',
-      '/api/game_sessions/$gameSessionId/challenges/$challengeId/draw',
-      body: {'prompt': prompt},
-    );
-    _handleResponse(response);
-  }
 
   /// Récupère les challenges à deviner
   Future<List<Challenge>> getMyChallengesToGuess(String gameSessionId) async {
@@ -298,6 +298,27 @@ class ApiService {
       },
     );
     _handleResponse(response);
+  }
+
+  /// Génère une image pour un challenge via StableDiffusion (backend)
+  Future<String> generateImageForChallenge(
+    String gameSessionId,
+    String challengeId,
+    String prompt,
+  ) async {
+    final response = await _request(
+      'POST',
+      '/game_sessions/$gameSessionId/challenges/$challengeId/generate-image',
+      body: {'prompt': prompt},
+    );
+    _handleResponse(response);
+    
+    final data = jsonDecode(response.body);
+    final imageUrl = data['image_url'] ?? data['imageUrl'];
+    if (imageUrl == null) {
+      throw Exception('URL d\'image manquante dans la réponse');
+    }
+    return imageUrl;
   }
 
   /// Liste tous les challenges d'une session (mode finished)
