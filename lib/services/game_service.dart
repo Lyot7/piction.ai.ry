@@ -7,7 +7,47 @@ import 'api_service.dart';
 /// Service de gestion de l'état du jeu
 class GameService {
   static final GameService _instance = GameService._internal();
-  factory GameService() => _instance;
+  
+  // ===== Flux d'états automatique =====
+  // null -> challenge -> drawing -> guessing -> finished
+  void _checkTransitions() {
+    if (_currentStatus == 'challenge') {
+      // challenge -> drawing
+      if (_currentGameSession != null &&
+          _currentGameSession!.players.every((p) => p.challengesSent == 3)) {
+        _currentStatus = 'drawing';
+        _statusController.add(_currentStatus);
+      }
+    } else if (_currentStatus == 'drawing') {
+      // drawing -> guessing
+      if (_currentGameSession != null &&
+          _currentGameSession!.players.every((p) => p.hasDrawn)) {
+        _currentStatus = 'guessing';
+        _statusController.add(_currentStatus);
+      }
+    } else if (_currentStatus == 'guessing') {
+      // guessing -> finished
+      final now = DateTime.now();
+      if (_currentGameSession != null) {
+        final start = _currentGameSession!.startTime;
+        // Finir si tous ont répondu ou si >5 min
+        if (_currentGameSession!.players.every((p) => p.hasGuessed) ||
+            (start != null && now.difference(start).inMinutes >= 5)) {
+          _currentStatus = 'finished';
+          _statusController.add(_currentStatus);
+        }
+      }
+    }
+  }
+
+  factory GameService() {
+    final service = _instance;
+    // Écoute en continu les mises à jour de session et de statut
+    service.statusStream.listen((_) => service._checkTransitions());
+    service.gameSessionStream.listen((_) => service._checkTransitions());
+    return service;
+  }
+
   GameService._internal();
 
   final ApiService _apiService = ApiService();
@@ -134,7 +174,9 @@ class GameService {
       _currentGameSession = await _apiService.getGameSession(gameSessionId);
       _currentStatus = await _apiService.getGameSessionStatus(gameSessionId);
       
-      _gameSessionController.add(_currentGameSession);
+_gameSessionController.add(_currentGameSession);
+      // Vérifier si on doit changer de phase
+      _checkTransitions();
       _statusController.add(_currentStatus);
     } catch (e) {
       throw Exception('Erreur lors de l\'actualisation de la session: $e');
@@ -150,7 +192,9 @@ class GameService {
     try {
       await _apiService.startGameSession(_currentGameSession!.id);
       _currentStatus = 'challenge';
-      _statusController.add(_currentStatus);
+_statusController.add(_currentStatus);
+    // Tenter transition auto
+    _checkTransitions();
     } catch (e) {
       throw Exception('Erreur lors du démarrage de la session: $e');
     }

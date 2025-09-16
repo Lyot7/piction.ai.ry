@@ -2,6 +2,8 @@ import 'player.dart';
 
 /// Modèle pour une session de jeu
 class GameSession {
+  /// Alias pour la date de début, utilisé par la logique de transition
+  DateTime? get startTime => startedAt;
   final String id;
   final String status; // "lobby", "challenge", "drawing", "guessing", "finished"
   final List<Player> players;

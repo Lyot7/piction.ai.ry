@@ -1,6 +1,139 @@
 import 'package:flutter/material.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../themes/app_theme.dart';
+
+/// Overlay personnalisé pour le scanner QR
+class QRScannerOverlayShape extends ShapeBorder {
+  final Color borderColor;
+  final double borderWidth;
+  final Color overlayColor;
+  final double borderRadius;
+  final double borderLength;
+  final double cutOutSize;
+
+  const QRScannerOverlayShape({
+    this.borderColor = Colors.red,
+    this.borderWidth = 3.0,
+    this.overlayColor = const Color.fromRGBO(0, 0, 0, 80),
+    this.borderRadius = 0,
+    this.borderLength = 40,
+    this.cutOutSize = 250,
+  });
+
+  @override
+  EdgeInsetsGeometry get dimensions => const EdgeInsets.all(10);
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addPath(getOuterPath(rect), Offset.zero);
+  }
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    Path getLeftTopPath(double s) {
+      return Path()
+        ..moveTo(rect.left, rect.bottom)
+        ..lineTo(rect.left, rect.top)
+        ..lineTo(rect.right, rect.top);
+    }
+
+    return getLeftTopPath(cutOutSize);
+  }
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    final width = rect.width;
+    final borderWidthSize = width / 2;
+    final height = rect.height;
+    final borderOffset = borderWidth / 2;
+    final mBorderLength =
+        borderLength > cutOutSize / 2 + borderWidth ? borderWidthSize / 2 : borderLength;
+    final mCutOutSize =
+        cutOutSize < width ? cutOutSize : width - borderOffset;
+
+    final backgroundPaint = Paint()
+      ..color = overlayColor
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderWidth;
+
+    final boxPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.fill
+      ..blendMode = BlendMode.dstOut;
+
+    final cutOutRect = Rect.fromLTWH(
+      rect.left + width / 2 - mCutOutSize / 2 + borderOffset,
+      rect.top + height / 2 - mCutOutSize / 2 + borderOffset,
+      mCutOutSize - borderOffset * 2,
+      mCutOutSize - borderOffset * 2,
+    );
+
+    canvas
+      ..saveLayer(
+        rect,
+        backgroundPaint,
+      )
+      ..drawRect(rect, backgroundPaint)
+      ..drawRRect(
+        RRect.fromRectAndCorners(
+          cutOutRect,
+          topLeft: Radius.circular(borderRadius),
+          topRight: Radius.circular(borderRadius),
+          bottomLeft: Radius.circular(borderRadius),
+          bottomRight: Radius.circular(borderRadius),
+        ),
+        boxPaint,
+      )
+      ..restore();
+
+    // Top left corner
+    canvas.drawPath(
+        Path()
+          ..moveTo(cutOutRect.left - borderOffset, cutOutRect.top + mBorderLength)
+          ..lineTo(cutOutRect.left - borderOffset, cutOutRect.top)
+          ..lineTo(cutOutRect.left + mBorderLength, cutOutRect.top),
+        borderPaint);
+
+    // Top right corner
+    canvas.drawPath(
+        Path()
+          ..moveTo(cutOutRect.right - mBorderLength, cutOutRect.top)
+          ..lineTo(cutOutRect.right + borderOffset, cutOutRect.top)
+          ..lineTo(cutOutRect.right + borderOffset, cutOutRect.top + mBorderLength),
+        borderPaint);
+
+    // Bottom right corner
+    canvas.drawPath(
+        Path()
+          ..moveTo(cutOutRect.right + borderOffset, cutOutRect.bottom - mBorderLength)
+          ..lineTo(cutOutRect.right + borderOffset, cutOutRect.bottom)
+          ..lineTo(cutOutRect.right - mBorderLength, cutOutRect.bottom),
+        borderPaint);
+
+    // Bottom left corner
+    canvas.drawPath(
+        Path()
+          ..moveTo(cutOutRect.left + mBorderLength, cutOutRect.bottom)
+          ..lineTo(cutOutRect.left - borderOffset, cutOutRect.bottom)
+          ..lineTo(cutOutRect.left - borderOffset, cutOutRect.bottom - mBorderLength),
+        borderPaint);
+  }
+
+  @override
+  ShapeBorder scale(double t) {
+    return QRScannerOverlayShape(
+      borderColor: borderColor,
+      borderWidth: borderWidth,
+      overlayColor: overlayColor,
+    );
+  }
+}
 
 /// Écran de scan de QR code pour rejoindre une room
 class QRScannerScreen extends StatefulWidget {
@@ -11,39 +144,26 @@ class QRScannerScreen extends StatefulWidget {
 }
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
-  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
-  QRViewController? controller;
+  MobileScannerController cameraController = MobileScannerController();
   bool _isScanning = true;
   String? _lastScannedCode;
 
   @override
-  void reassemble() {
-    super.reassemble();
-    if (controller != null) {
-      controller!.pauseCamera();
-      controller!.resumeCamera();
-    }
-  }
-
-  @override
   void dispose() {
-    controller?.dispose();
+    cameraController.dispose();
     super.dispose();
   }
 
-  void _onQRViewCreated(QRViewController controller) {
-    this.controller = controller;
-    controller.scannedDataStream.listen((scanData) {
-      if (_isScanning && scanData.code != null && scanData.code != _lastScannedCode) {
-        _lastScannedCode = scanData.code;
-        _handleQRCode(scanData.code!);
-      }
-    });
-  }
+  void _handleQRCode(BarcodeCapture capture) {
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
 
-  void _handleQRCode(String code) {
+    final String? code = barcodes.first.rawValue;
+    if (code == null || code == _lastScannedCode || !_isScanning) return;
+
     setState(() {
       _isScanning = false;
+      _lastScannedCode = code;
     });
 
     // Extraire l'ID de la room du QR code
@@ -88,11 +208,25 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   }
 
   void _toggleFlash() {
-    controller?.toggleFlash();
+    cameraController.toggleTorch();
   }
 
   void _flipCamera() {
-    controller?.flipCamera();
+    cameraController.switchCamera();
+  }
+
+  Widget _buildScannerOverlay() {
+    return Container(
+      decoration: ShapeDecoration(
+        shape: QRScannerOverlayShape(
+          borderColor: AppTheme.primaryColor,
+          borderRadius: 10,
+          borderLength: 30,
+          borderWidth: 10,
+          cutOutSize: 250,
+        ),
+      ),
+    );
   }
 
   @override
@@ -119,18 +253,11 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       body: Stack(
         children: [
           // Scanner QR
-          QRView(
-            key: qrKey,
-            onQRViewCreated: _onQRViewCreated,
-            overlay: QrScannerOverlayShape(
-              borderColor: AppTheme.primaryColor,
-              borderRadius: 10,
-              borderLength: 30,
-              borderWidth: 10,
-              cutOutSize: 250,
-            ),
-          ),
-          
+          MobileScanner(controller: cameraController, onDetect: _handleQRCode),
+
+          // Overlay personnalisé
+          _buildScannerOverlay(),
+
           // Instructions
           Positioned(
             top: 20,
@@ -172,7 +299,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               ),
             ),
           ),
-          
+
           // Indicateur de scan
           if (_isScanning)
             Positioned(
@@ -181,7 +308,10 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
                     borderRadius: BorderRadius.circular(20),
@@ -194,7 +324,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -210,7 +342,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 ),
               ),
             ),
-          
+
           // Bouton retour
           Positioned(
             bottom: 40,
@@ -230,10 +362,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 ),
                 child: const Text(
                   'Annuler',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
