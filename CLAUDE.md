@@ -288,6 +288,10 @@ This project has access to specialized agents and MCP (Model Context Protocol) t
 **Available but limited relevance**: React specialist
 **Note**: This agent focuses on React/web development. For Flutter work, prefer the **mobile-developer** agent instead.
 
+#### 6. performance-engineer
+@performance-engineer.md
+
+
 ### ENABLED MCP SERVERS
 
 #### context7

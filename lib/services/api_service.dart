@@ -20,6 +20,11 @@ class ApiService {
   String? _jwt;
   String? _playerId;
 
+  // ===== PERFORMANCE OPTIMIZATION =====
+  // Cache des joueurs pour éviter les appels API répétés
+  // Map<playerId, Player> - Les données des joueurs sont stables pendant une session
+  final Map<String, Player> _playerCache = {};
+
   /// Initialise le service avec les tokens stockés
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -207,12 +212,26 @@ class ApiService {
   }
 
   /// Récupère un joueur par son ID
+  /// Utilise un cache pour éviter les appels API répétés
   Future<Player> getPlayer(String playerId) async {
+    // ⚡ OPTIMISATION: Vérifier d'abord le cache
+    if (_playerCache.containsKey(playerId)) {
+      AppLogger.info('[ApiService] Cache HIT pour joueur: $playerId');
+      return _playerCache[playerId]!;
+    }
+
+    AppLogger.info('[ApiService] Cache MISS pour joueur: $playerId - Fetching from API');
+
     final response = await _request('GET', '/players/$playerId');
     _handleResponse(response);
-    
+
     final data = jsonDecode(response.body);
-    return Player.fromJson(data);
+    final player = Player.fromJson(data);
+
+    // ⚡ OPTIMISATION: Mettre en cache pour les prochains appels
+    _playerCache[playerId] = player;
+
+    return player;
   }
 
   // ===== SESSIONS DE JEU =====
@@ -258,60 +277,76 @@ class ApiService {
 
     final data = jsonDecode(response.body);
 
+    AppLogger.info('[ApiService] GET SESSION RAW DATA: ${jsonEncode(data)}');
+
     // Parser la session de base
     final session = GameSession.fromJson(data);
 
-    // Enrichir les joueurs avec leurs détails complets
+    // Si les joueurs ont des noms vides, c'est que le serveur renvoie red_team/blue_team
+    // Il faut enrichir avec les vraies données du serveur
     if (session.players.isNotEmpty && session.players.first.name.isEmpty) {
-      final enrichedPlayers = await _enrichPlayersWithDetails(session.players, data);
-      return session.copyWith(players: enrichedPlayers);
+      AppLogger.warning('[ApiService] Joueurs avec noms vides, enrichissement requis');
+      final enrichedPlayers = await _enrichPlayersFromServer(session.players, data);
+      final enrichedSession = session.copyWith(players: enrichedPlayers);
+      AppLogger.info('[ApiService] Enriched players: ${enrichedSession.players.map((p) => "${p.name} (${p.id})").join(", ")}');
+      return enrichedSession;
     }
+
+    AppLogger.info('[ApiService] Parsed players: ${session.players.map((p) => "${p.name} (${p.id})").join(", ")}');
 
     return session;
   }
 
-  /// Enrichit les joueurs minimaux avec leurs détails complets
-  Future<List<Player>> _enrichPlayersWithDetails(
+  /// Enrichit les joueurs en récupérant leurs infos du serveur
+  /// Cette fonction récupère les VRAIES données du serveur, pas des données locales
+  /// ⚡ OPTIMISATION: Évite les appels API si le joueur a déjà toutes ses données
+  Future<List<Player>> _enrichPlayersFromServer(
     List<Player> minimalPlayers,
     Map<String, dynamic> sessionData,
   ) async {
     final enrichedPlayers = <Player>[];
 
-    // Récupérer l'ID du joueur actuel depuis la session ou depuis le token
-    final currentPlayerId = sessionData['player_id']?.toString() ?? _playerId;
-
-    // Déterminer les hosts une seule fois
+    // Déterminer le host (premier joueur de la première équipe)
     final redTeam = (sessionData['red_team'] as List<dynamic>?) ?? [];
     final blueTeam = (sessionData['blue_team'] as List<dynamic>?) ?? [];
     final hostId = redTeam.isNotEmpty ? redTeam.first.toString() :
                    (blueTeam.isNotEmpty ? blueTeam.first.toString() : null);
 
-    // Enrichir les joueurs en parallèle pour plus de rapidité
-    final futures = minimalPlayers.map((minimalPlayer) async {
+    // Enrichir chaque joueur avec ses vraies données du serveur
+    for (final minimalPlayer in minimalPlayers) {
       try {
-        Player fullPlayer;
-
-        if (minimalPlayer.id == currentPlayerId) {
-          fullPlayer = await getMe();
-        } else {
-          fullPlayer = await getPlayer(minimalPlayer.id);
+        // ⚡ OPTIMISATION CRITIQUE: Ne pas enrichir si le joueur a déjà un nom
+        // Cela évite des appels API inutiles à chaque polling
+        if (minimalPlayer.name.isNotEmpty) {
+          // Le joueur est déjà complet, juste mettre à jour isHost si nécessaire
+          final isHost = minimalPlayer.id == hostId;
+          enrichedPlayers.add(minimalPlayer.copyWith(isHost: isHost));
+          AppLogger.info('[ApiService] Player already complete: ${minimalPlayer.name} (ID: ${minimalPlayer.id}) - SKIPPED API call');
+          continue;
         }
+
+        // Le joueur n'a pas de nom, il faut l'enrichir depuis l'API
+        // getPlayer() utilise maintenant un cache, donc l'appel sera rapide après le premier fetch
+        final fullPlayer = await getPlayer(minimalPlayer.id);
 
         final isHost = minimalPlayer.id == hostId;
 
-        return fullPlayer.copyWith(
+        enrichedPlayers.add(fullPlayer.copyWith(
           color: minimalPlayer.color,
           isHost: isHost,
-        );
-      } catch (e) {
-        // En cas d'erreur, garder le joueur minimal
-        return minimalPlayer;
-      }
-    });
+        ));
 
-    enrichedPlayers.addAll(await Future.wait(futures));
+        AppLogger.info('[ApiService] Enriched player: ${fullPlayer.name} (ID: ${fullPlayer.id})');
+      } catch (e) {
+        AppLogger.error('[ApiService] Erreur enrichissement joueur ${minimalPlayer.id}', e);
+        // En cas d'erreur, garder le joueur minimal
+        enrichedPlayers.add(minimalPlayer);
+      }
+    }
+
     return enrichedPlayers;
   }
+
 
   /// Récupère le statut d'une session
   Future<String> getGameSessionStatus(String gameSessionId) async {
@@ -324,7 +359,14 @@ class ApiService {
 
   /// Démarre une session de jeu
   Future<void> startGameSession(String gameSessionId) async {
+    AppLogger.info('[ApiService] START GAME REQUEST - Session: $gameSessionId');
+    AppLogger.info('[ApiService] START GAME REQUEST - JWT présent: ${_jwt != null}');
+
     final response = await _request('POST', '/game_sessions/$gameSessionId/start');
+
+    AppLogger.info('[ApiService] START GAME RESPONSE - Status: ${response.statusCode}');
+    AppLogger.info('[ApiService] START GAME RESPONSE - Body: ${response.body}');
+
     _handleResponse(response);
   }
 
@@ -454,8 +496,17 @@ class ApiService {
   Future<void> logout() async {
     _jwt = null;
     _playerId = null;
+    // ⚡ OPTIMISATION: Nettoyer le cache des joueurs lors de la déconnexion
+    _playerCache.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_jwtKey);
     await prefs.remove(_playerIdKey);
+  }
+
+  /// Nettoie le cache des joueurs (utile pour forcer un refresh)
+  /// ⚡ OPTIMISATION: Permet de vider le cache manuellement si besoin
+  void clearPlayerCache() {
+    _playerCache.clear();
+    AppLogger.info('[ApiService] Player cache cleared');
   }
 }

@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Piction.ia.ry a besoin d'accéder à votre caméra pour scanner les QR codes et rejoindre des parties</string>
 </dict>
 </plist>

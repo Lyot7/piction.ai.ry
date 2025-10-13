@@ -111,6 +111,9 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
     if (result != null && result is String) {
       // Le QR code contient l'ID de la room
       _searchController.text = result;
+
+      // Rejoindre automatiquement la room après le scan
+      await _joinRoomById();
     }
   }
 

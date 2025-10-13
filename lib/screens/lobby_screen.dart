@@ -8,6 +8,7 @@ import '../models/game_session.dart';
 import '../models/player.dart';
 import '../services/game_service.dart';
 import '../services/deep_link_service.dart';
+import '../utils/logger.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
@@ -33,10 +34,17 @@ class _LobbyScreenState extends State<LobbyScreen> {
   // Map: playerId -> targetTeamColor
   final Map<String, String> _playersTransitioning = {};
 
+  // ⚡ OPTIMISATION: Cache du lien de join pour éviter les recalculs
+  late final String _cachedJoinLink;
+
   @override
   void initState() {
     super.initState();
     _gameSession = widget.gameSession;
+
+    // ⚡ OPTIMISATION: Calculer le lien de join UNE SEULE FOIS
+    _cachedJoinLink = _generateJoinLink();
+
     _listenToGameSessionUpdates();
     _startAutoRefresh();
     // Faire un refresh immédiat pour afficher l'état actuel
@@ -81,6 +89,14 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Future<void> _startGame() async {
     if (!_canStartGame()) return;
 
+    // Log de l'état avant démarrage
+    AppLogger.info('[LobbyScreen] Démarrage de la partie...');
+    AppLogger.info('[LobbyScreen] Session ID: ${_gameSession.id}');
+    AppLogger.info('[LobbyScreen] Nombre de joueurs: ${_gameSession.players.length}');
+    AppLogger.info('[LobbyScreen] Équipe rouge: ${_gameSession.players.where((p) => p.color == 'red').length} joueurs');
+    AppLogger.info('[LobbyScreen] Équipe bleue: ${_gameSession.players.where((p) => p.color == 'blue').length} joueurs');
+    AppLogger.info('[LobbyScreen] Joueurs: ${_gameSession.players.map((p) => "${p.name} (${p.color})").join(", ")}');
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -91,6 +107,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
       // La navigation vers l'écran de création de challenges se fera automatiquement
       // via le stream de statut
     } catch (e) {
+      AppLogger.error('[LobbyScreen] ERREUR démarrage', e);
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
@@ -152,7 +169,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
                   // Code de partie et QR Code
                   _buildGameCodeAndQRCard(),
                   const SizedBox(height: 16),
-
 
                   // Équipes en vertical
                   _buildTeamsSection(),
@@ -255,7 +271,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       ],
                     ),
                     child: QrImageView(
-                      data: _generateJoinLink(),
+                      data: _cachedJoinLink, // ⚡ OPTIMISATION: Utiliser le cache
                       version: QrVersions.auto,
                       backgroundColor: Colors.white,
                       eyeStyle: const QrEyeStyle(
@@ -608,13 +624,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   /// Partage la room avec la modal native
   void _shareRoom() {
-    final deepLinkService = DeepLinkService();
-    final joinLink = deepLinkService.generateRoomLink(_gameSession.id);
-
+    // ⚡ OPTIMISATION: Utiliser le cache au lieu de régénérer
     final shareText =
         'Rejoignez ma partie Piction.ia.ry ! 🎨\n\n'
         'Code de room: ${_gameSession.id}\n'
-        'Lien direct: $joinLink\n\n'
+        'Lien direct: $_cachedJoinLink\n\n'
         'Téléchargez l\'app et rejoignez la partie !';
 
     Share.share(
@@ -625,9 +639,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   /// Affiche le QR code en grand dans un overlay qui se ferme au clic
   void _showQRCodeOverlay() {
-    final deepLinkService = DeepLinkService();
-    final joinLink = deepLinkService.generateRoomLink(_gameSession.id);
-
+    // ⚡ OPTIMISATION: Utiliser le cache au lieu de régénérer
     final overlay = Overlay.of(context);
     late OverlayEntry overlayEntry;
 
@@ -666,7 +678,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                         border: Border.all(color: Colors.grey[300]!),
                       ),
                       child: QrImageView(
-                        data: joinLink,
+                        data: _cachedJoinLink, // ⚡ OPTIMISATION: Utiliser le cache
                         version: QrVersions.auto,
                         size: 250.0,
                         backgroundColor: Colors.white,
@@ -850,7 +862,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   void _startAutoRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+    // ⚡ OPTIMISATION: Passer de 500ms → 1000ms pour réduire la charge
+    // Avec 4 clients: 8 req/s → 4 req/s (réduction de 50%)
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
       if (mounted) {
         _refreshSessionOptimized();
       }

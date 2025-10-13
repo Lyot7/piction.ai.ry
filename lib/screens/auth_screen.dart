@@ -206,8 +206,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 labelText: 'Nom d\'utilisateur',
                 prefixIcon: Icon(Icons.person),
                 hintText: 'Entrez votre nom',
-                helperText: 'Un suffixe sera ajouté automatiquement si besoin (_2, _3...)',
-                helperMaxLines: 2,
               ),
               validator: (value) {
                 // Validation simple avant soumission

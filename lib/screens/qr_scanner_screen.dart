@@ -147,11 +147,31 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   MobileScannerController cameraController = MobileScannerController();
   bool _isScanning = true;
   String? _lastScannedCode;
+  String? _permissionError;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkCameraPermission();
+  }
 
   @override
   void dispose() {
     cameraController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkCameraPermission() async {
+    try {
+      // Le controller va automatiquement demander la permission au premier lancement
+      await cameraController.start();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _permissionError = 'Accès à la caméra refusé. Veuillez autoriser l\'accès dans les Réglages.';
+        });
+      }
+    }
   }
 
   void _handleQRCode(BarcodeCapture capture) {
@@ -237,29 +257,71 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.flash_on),
-            onPressed: _toggleFlash,
-            tooltip: 'Activer/Désactiver le flash',
-          ),
-          IconButton(
-            icon: const Icon(Icons.flip_camera_ios),
-            onPressed: _flipCamera,
-            tooltip: 'Changer de caméra',
-          ),
-        ],
+        actions: _permissionError == null
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.flash_on),
+                  onPressed: _toggleFlash,
+                  tooltip: 'Activer/Désactiver le flash',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.flip_camera_ios),
+                  onPressed: _flipCamera,
+                  tooltip: 'Changer de caméra',
+                ),
+              ]
+            : null,
       ),
       body: Stack(
         children: [
-          // Scanner QR
-          MobileScanner(controller: cameraController, onDetect: _handleQRCode),
+          // Scanner QR (ou message d'erreur si pas de permission)
+          if (_permissionError == null)
+            MobileScanner(controller: cameraController, onDetect: _handleQRCode)
+          else
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.camera_alt_outlined,
+                      size: 80,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      _permissionError!,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Retourner à l'écran précédent
+                        Navigator.of(context).pop();
+                      },
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Retour'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
-          // Overlay personnalisé
-          _buildScannerOverlay(),
+          // Overlay personnalisé (uniquement si pas d'erreur)
+          if (_permissionError == null) _buildScannerOverlay(),
 
-          // Instructions
-          Positioned(
+          // Instructions (uniquement si pas d'erreur)
+          if (_permissionError == null)
+            Positioned(
             top: 20,
             left: 20,
             right: 20,
@@ -300,8 +362,8 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             ),
           ),
 
-          // Indicateur de scan
-          if (_isScanning)
+          // Indicateur de scan (uniquement si pas d'erreur)
+          if (_isScanning && _permissionError == null)
             Positioned(
               bottom: 100,
               left: 0,
@@ -343,8 +405,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               ),
             ),
 
-          // Bouton retour
-          Positioned(
+          // Bouton retour (uniquement si pas d'erreur)
+          if (_permissionError == null)
+            Positioned(
             bottom: 40,
             left: 20,
             right: 20,
