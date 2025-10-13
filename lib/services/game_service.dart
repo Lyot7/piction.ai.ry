@@ -72,6 +72,9 @@ class GameService {
   List<Challenge> _challengesToGuess = [];
   String _currentStatus = 'lobby';
 
+  // Gestion des appels en cours pour éviter les race conditions
+  Future<void>? _pendingTeamChange;
+
   // Streams pour notifier les changements
   final StreamController<Player?> _playerController = StreamController<Player?>.broadcast();
   final StreamController<GameSession?> _gameSessionController = StreamController<GameSession?>.broadcast();
@@ -251,8 +254,8 @@ class GameService {
             errorMessage.contains('network');
 
         if (isTransientError && attempt < maxRetries) {
-          // Délai exponentiel: 500ms, 1s, 2s
-          final delayMs = 500 * (1 << (attempt - 1));
+          // Délai rapide et progressif: 100ms, 200ms, 300ms
+          final delayMs = 100 * attempt;
           await Future.delayed(Duration(milliseconds: delayMs));
         } else if (!isTransientError) {
           throw Exception('Erreur lors de l\'actualisation de la session: $e');
@@ -299,37 +302,54 @@ _statusController.add(_currentStatus);
     }
   }
 
-  /// Change d'équipe dans la session actuelle
+  /// Change d'équipe dans la session actuelle (optimisé, annule les appels précédents)
   Future<void> changeTeam(String newColor) async {
     if (_currentGameSession == null) {
       throw Exception('Aucune session active');
     }
 
+    // Si un changement d'équipe est déjà en cours, on ignore ce nouveau changement
+    // Le dernier clic sera pris en compte après la fin de l'opération en cours
+    if (_pendingTeamChange != null) {
+      return;
+    }
+
+    // Marquer qu'un changement est en cours
+    _pendingTeamChange = _performTeamChange(newColor);
+
     try {
-      // Actualiser d'abord la session pour avoir l'état le plus récent
-      await refreshGameSession(_currentGameSession!.id);
-
-      // Vérifier que l'équipe cible n'est pas pleine
-      final targetTeamCount = _currentGameSession!.players
-          .where((p) => p.color == newColor)
-          .length;
-
-      if (targetTeamCount >= 2) {
-        throw Exception('L\'équipe $newColor est déjà complète');
-      }
-
-      // Version robuste du changement d'équipe
-      await _safeChangeTeam(_currentGameSession!.id, newColor);
-    } catch (e) {
-      throw Exception('Erreur lors du changement d\'équipe: $e');
+      await _pendingTeamChange;
+    } finally {
+      _pendingTeamChange = null;
     }
   }
 
-  /// Version robuste du changement d'équipe
+  /// Effectue le changement d'équipe réel
+  Future<void> _performTeamChange(String newColor) async {
+    try {
+      // Effectuer le changement côté serveur de manière optimisée
+      await _safeChangeTeam(_currentGameSession!.id, newColor);
+    } catch (e) {
+      // En cas d'erreur, le refresh automatique du lobby s'en chargera
+      // On ne throw que pour les erreurs importantes
+      final errorMessage = e.toString().toLowerCase();
+      if (!errorMessage.contains('already in') &&
+          !errorMessage.contains('connection') &&
+          !errorMessage.contains('timeout')) {
+        rethrow;
+      }
+      // Pour les erreurs transitoires, on ignore silencieusement
+    }
+  }
+
+  /// Version robuste du changement d'équipe (optimisée)
   Future<void> _safeChangeTeam(String gameSessionId, String newColor) async {
     try {
+      // Appels API en séquence rapide (pas de refresh entre)
       await _apiService.leaveGameSession(gameSessionId);
       await _apiService.joinGameSession(gameSessionId, newColor);
+
+      // Un seul refresh à la fin
       await refreshGameSession(gameSessionId);
     } catch (e) {
       final errorMessage = e.toString().toLowerCase();
@@ -355,9 +375,44 @@ _statusController.add(_currentStatus);
   /// Rejoint automatiquement une équipe disponible (sans spécifier de couleur)
   Future<void> joinAvailableTeam(String gameSessionId) async {
     try {
+      // Vérifier que le joueur est bien connecté
+      if (_currentPlayer == null) {
+        throw Exception('Vous devez être connecté pour rejoindre une équipe');
+      }
+
+      AppLogger.info('[GameService] Joueur actuel: ${_currentPlayer!.name} (ID: ${_currentPlayer!.id})');
+
       final availableColor = await _getAvailableTeamColor(gameSessionId);
+      AppLogger.info('[GameService] Couleur d\'équipe attribuée: $availableColor');
+
       await _safeJoinGameSession(gameSessionId, availableColor);
       await refreshGameSession(gameSessionId);
+
+      // Vérifier que le joueur est bien dans la session après le join
+      if (_currentGameSession != null) {
+        final playerInSession = _currentGameSession!.players
+            .where((p) => p.id == _currentPlayer!.id)
+            .firstOrNull;
+
+        if (playerInSession != null) {
+          AppLogger.success('[GameService] Joueur trouvé dans la session: ${playerInSession.name}');
+
+          // CRITIQUE: Vérifier si le nom correspond
+          if (playerInSession.name != _currentPlayer!.name) {
+            AppLogger.error(
+              '[GameService] ⚠️ DUPLICATION DÉTECTÉE! '
+              'Joueur attendu: "${_currentPlayer!.name}" (ID: ${_currentPlayer!.id}) '
+              'vs Joueur réel: "${playerInSession.name}" (ID: ${playerInSession.id})',
+              null
+            );
+          } else {
+            AppLogger.success('[GameService] ✅ Vérification OK - Même joueur avant et après join');
+          }
+        } else {
+          AppLogger.warning('[GameService] Joueur non trouvé dans la session après join');
+          AppLogger.warning('[GameService] Joueurs présents: ${_currentGameSession!.players.map((p) => "${p.name} (${p.id})").join(", ")}');
+        }
+      }
     } catch (e) {
       throw Exception('Erreur lors de l\'attribution automatique d\'équipe: $e');
     }

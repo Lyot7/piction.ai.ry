@@ -74,8 +74,13 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
       if (mounted) {
         // ✅ CORRECTION: Passer la session MISE À JOUR au lobby
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => LobbyScreen(gameSession: updatedSession),
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                LobbyScreen(gameSession: updatedSession),
+            transitionDuration: const Duration(milliseconds: 150),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
           ),
         );
       }
@@ -94,8 +99,12 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
 
   Future<void> _scanQRCode() async {
     final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const QRScannerScreen(),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const QRScannerScreen(),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     );
 
@@ -146,9 +155,9 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
     return AnimationLimiter(
       child: Column(
         children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 150),
           childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 50.0,
+            verticalOffset: 20.0,
             child: FadeInAnimation(child: widget),
           ),
           children: [

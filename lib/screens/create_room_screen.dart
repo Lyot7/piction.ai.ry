@@ -62,8 +62,13 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   void _goToLobby() {
     if (_createdGameSession != null) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => LobbyScreen(gameSession: _createdGameSession!),
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              LobbyScreen(gameSession: _createdGameSession!),
+          transitionDuration: const Duration(milliseconds: 150),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
         ),
       );
     }
@@ -116,9 +121,9 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 150),
           childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 50.0,
+            verticalOffset: 20.0,
             child: FadeInAnimation(child: widget),
           ),
           children: [
@@ -149,9 +154,9 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 150),
           childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 50.0,
+            verticalOffset: 20.0,
             child: FadeInAnimation(child: widget),
           ),
           children: [

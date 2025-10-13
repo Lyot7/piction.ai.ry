@@ -17,7 +17,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  
+
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -50,8 +50,13 @@ class _AuthScreenState extends State<AuthScreen> {
         // Si un lien de room est en attente, naviguer vers JoinRoom
         if (widget.pendingRoomId != null) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => JoinRoomScreen(initialRoomId: widget.pendingRoomId!),
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  JoinRoomScreen(initialRoomId: widget.pendingRoomId!),
+              transitionDuration: const Duration(milliseconds: 150),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
           );
         } else {
@@ -192,6 +197,7 @@ class _AuthScreenState extends State<AuthScreen> {
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Champ nom
             TextFormField(
@@ -199,9 +205,12 @@ class _AuthScreenState extends State<AuthScreen> {
               decoration: const InputDecoration(
                 labelText: 'Nom d\'utilisateur',
                 prefixIcon: Icon(Icons.person),
-                hintText: 'Choisissez un nom unique',
+                hintText: 'Entrez votre nom',
+                helperText: 'Un suffixe sera ajouté automatiquement si besoin (_2, _3...)',
+                helperMaxLines: 2,
               ),
               validator: (value) {
+                // Validation simple avant soumission
                 if (value == null || value.isEmpty) {
                   return 'Veuillez entrer votre nom';
                 }
@@ -209,6 +218,14 @@ class _AuthScreenState extends State<AuthScreen> {
                   return 'Le nom doit contenir au moins 3 caractères';
                 }
                 return null;
+              },
+              onChanged: (_) {
+                // Réinitialiser l'erreur API quand l'utilisateur modifie le nom
+                if (_errorMessage != null) {
+                  setState(() {
+                    _errorMessage = null;
+                  });
+                }
               },
             ),
           ],
@@ -250,7 +267,6 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildActionButton() {
-    
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(

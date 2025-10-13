@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/player.dart';
 import '../models/game_session.dart';
 import '../models/challenge.dart';
+import '../utils/logger.dart';
 
 /// Service principal pour les appels API
 class ApiService {
@@ -59,6 +60,12 @@ class ApiService {
   }) async {
     final url = Uri.parse('$_baseUrl$endpoint');
     final headers = _headers;
+
+    // Log détaillé pour debug (masquer le JWT complet)
+    AppLogger.info('[ApiService] REQUEST $method $endpoint - JWT: ${_jwt != null ? "présent (${_jwt!.substring(0, 10)}...)" : "absent"}');
+    if (body != null) {
+      AppLogger.info('[ApiService] REQUEST BODY: ${jsonEncode(body)}');
+    }
 
     http.Response response;
     switch (method.toUpperCase()) {
@@ -142,47 +149,60 @@ class ApiService {
   Future<String> loginWithUsername(String username) async {
     // Utiliser un mot de passe par défaut pour simplifier l'auth
     const String defaultPassword = 'piction2024';
-    
-    try {
-      // D'abord essayer de se connecter (si l'utilisateur existe)
-      return await login(username, defaultPassword);
-    } catch (e) {
-      // Si échec, essayer de créer le joueur avec un nom unique
-      String uniqueUsername = username;
-      int attempt = 1;
-      
-      while (attempt <= 10) { // Limite à 10 tentatives
-        try {
-          await createPlayer(uniqueUsername, defaultPassword);
-          return await login(uniqueUsername, defaultPassword);
-        } catch (createError) {
-          final errorMessage = createError.toString();
-          if (errorMessage.contains('Player already exists')) {
-            // Si le joueur existe déjà, essayer avec un suffixe
-            attempt++;
-            uniqueUsername = '${username}_$attempt';
-          } else {
-            // Autre erreur, la remonter
-            throw Exception('Impossible de créer le compte "$uniqueUsername": $createError');
-          }
+
+    AppLogger.info('[ApiService] Tentative de connexion avec: $username');
+
+    // Essayer de créer le compte avec le nom, ou ajouter un suffixe si déjà pris
+    String attemptedName = username;
+    int suffix = 2;
+    const int maxAttempts = 10;
+
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        // Essayer de créer le compte
+        await createPlayer(attemptedName, defaultPassword);
+        AppLogger.success('[ApiService] Compte créé pour: $attemptedName');
+
+        // Une fois créé, se connecter
+        final jwt = await login(attemptedName, defaultPassword);
+        AppLogger.success('[ApiService] Connexion réussie pour: $attemptedName');
+        return jwt;
+      } catch (createError) {
+        final errorMessage = createError.toString().toLowerCase();
+
+        // Si le joueur existe déjà, essayer avec un suffixe
+        if (errorMessage.contains('already exists') ||
+            errorMessage.contains('déjà') ||
+            errorMessage.contains('existe')) {
+          AppLogger.warning('[ApiService] Le nom "$attemptedName" est déjà utilisé, essai avec suffixe');
+          attemptedName = '${username}_$suffix';
+          suffix++;
+          continue;
         }
+
+        // Autre erreur de création
+        AppLogger.error('[ApiService] Erreur création compte pour: $attemptedName', createError);
+        throw Exception('Impossible de créer le compte: $createError');
       }
-      
-      throw Exception('Impossible de créer un nom d\'utilisateur unique après 10 tentatives');
     }
+
+    // Si on arrive ici, on a épuisé toutes les tentatives
+    throw Exception('Impossible de trouver un nom disponible après $maxAttempts tentatives');
   }
 
   /// Récupère les informations du joueur connecté
   Future<Player> getMe() async {
     final response = await _request('GET', '/me');
     _handleResponse(response);
-    
+
     final data = jsonDecode(response.body);
     final player = Player.fromJson(data);
-    
+
     // Sauvegarde l'ID du joueur
     await _savePlayerId(player.id);
-    
+
+    AppLogger.info('[ApiService] Joueur récupéré: ${player.name} (ID: ${player.id})');
+
     return player;
   }
 
@@ -208,12 +228,21 @@ class ApiService {
 
   /// Rejoint une session de jeu
   Future<void> joinGameSession(String gameSessionId, String color) async {
+    // Log pour debug: vérifier que le JWT est bien présent
+    AppLogger.info('[ApiService] JOIN REQUEST - JWT présent: ${_jwt != null}');
+    AppLogger.info('[ApiService] JOIN REQUEST - Player ID: $_playerId');
+    AppLogger.info('[ApiService] JOIN REQUEST - Color: $color');
+    AppLogger.info('[ApiService] JOIN REQUEST - Game Session: $gameSessionId');
+
     final response = await _request(
       'POST',
       '/game_sessions/$gameSessionId/join',
       body: {'color': color},
     );
     _handleResponse(response);
+
+    AppLogger.success('[ApiService] JOIN RESPONSE - Status: ${response.statusCode}');
+    AppLogger.info('[ApiService] JOIN RESPONSE - Body: ${response.body}');
   }
 
   /// Quitte une session de jeu

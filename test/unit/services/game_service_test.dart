@@ -55,10 +55,8 @@ void main() {
   });
 
   group('GameService - Player Management', () {
-    late GameService gameService;
-
     setUp(() {
-      gameService = GameService();
+      // No setup needed for these tests
     });
 
     tearDown(() {
@@ -114,10 +112,8 @@ void main() {
   });
 
   group('GameService - Team Management', () {
-    late GameService gameService;
-
     setUp(() {
-      gameService = GameService();
+      // No setup needed for these tests
     });
 
     tearDown(() {

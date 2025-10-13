@@ -200,11 +200,15 @@ class _GameScreenState extends State<GameScreen> {
   void _endGame() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (context) => ResultsScreen(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => ResultsScreen(
           scoreTeam1: _scoreTeam1,
           scoreTeam2: _scoreTeam2,
         ),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     );
   }
@@ -239,9 +243,9 @@ class _GameScreenState extends State<GameScreen> {
       children: [
         _buildTimerChip(),
         const SizedBox(width: 8),
-        _buildScoreChip('Équipe 1', _scoreTeam1, AppTheme.team1Color),
+        _buildScoreChip('Équipe Rouge', _scoreTeam1, AppTheme.teamRedColor),
         const SizedBox(width: 8),
-        _buildScoreChip('Équipe 2', _scoreTeam2, AppTheme.team2Color),
+        _buildScoreChip('Équipe Bleue', _scoreTeam2, AppTheme.teamBlueColor),
         const Spacer(),
         Text('Challenge ${_currentChallengeIndex + 1}/${widget.challenges.length}'),
       ],

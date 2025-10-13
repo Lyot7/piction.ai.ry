@@ -25,10 +25,10 @@ class ResultsScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              winner == 'Équipe 1' 
-                  ? AppTheme.team1Color.withValues(alpha: 0.2)
-                  : winner == 'Équipe 2'
-                      ? AppTheme.team2Color.withValues(alpha: 0.2)
+              winner == 'Équipe Rouge'
+                  ? AppTheme.teamRedColor.withValues(alpha: 0.2)
+                  : winner == 'Équipe Bleue'
+                      ? AppTheme.teamBlueColor.withValues(alpha: 0.2)
                       : AppTheme.primaryColor.withValues(alpha: 0.1),
               AppTheme.backgroundColor,
             ],
@@ -40,34 +40,34 @@ class ResultsScreen extends StatelessWidget {
             child: AnimationLimiter(
               child: AnimationConfiguration.staggeredList(
                 position: 0,
-                duration: const Duration(milliseconds: 600),
+                duration: const Duration(milliseconds: 150),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Icône et titre de fin
                     SlideAnimation(
-                      verticalOffset: 50.0,
+                      verticalOffset: 20.0,
                       child: FadeInAnimation(child: _buildHeader(winner)),
                     ),
                     const SizedBox(height: 40),
-                    
+
                     // Scores finaux
                     SlideAnimation(
-                      verticalOffset: 50.0,
+                      verticalOffset: 20.0,
                       child: FadeInAnimation(child: _buildScoresCard()),
                     ),
                     const SizedBox(height: 40),
-                    
+
                     // Statistiques (optional future feature)
                     SlideAnimation(
-                      verticalOffset: 50.0,
+                      verticalOffset: 20.0,
                       child: FadeInAnimation(child: _buildStatsCard()),
                     ),
                     const SizedBox(height: 40),
-                    
+
                     // Boutons d'action
                     SlideAnimation(
-                      verticalOffset: 50.0,
+                      verticalOffset: 20.0,
                       child: FadeInAnimation(child: _buildActionButtons(context)),
                     ),
                   ],
@@ -90,17 +90,17 @@ class ResultsScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: winner == 'Égalité'
                 ? AppTheme.primaryColor
-                : winner == 'Équipe 1'
-                    ? AppTheme.team1Color
-                    : AppTheme.team2Color,
+                : winner == 'Équipe Rouge'
+                    ? AppTheme.teamRedColor
+                    : AppTheme.teamBlueColor,
             borderRadius: BorderRadius.circular(60),
             boxShadow: [
               BoxShadow(
                 color: (winner == 'Égalité'
                         ? AppTheme.primaryColor
-                        : winner == 'Équipe 1'
-                            ? AppTheme.team1Color
-                            : AppTheme.team2Color)
+                        : winner == 'Équipe Rouge'
+                            ? AppTheme.teamRedColor
+                            : AppTheme.teamBlueColor)
                     .withValues(alpha: 0.3),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
@@ -123,9 +123,9 @@ class ResultsScreen extends StatelessWidget {
             fontWeight: FontWeight.bold,
             color: winner == 'Égalité'
                 ? AppTheme.primaryColor
-                : winner == 'Équipe 1'
-                    ? AppTheme.team1Color
-                    : AppTheme.team2Color,
+                : winner == 'Équipe Rouge'
+                    ? AppTheme.teamRedColor
+                    : AppTheme.teamBlueColor,
           ),
         ),
         const SizedBox(height: 8),
@@ -164,7 +164,7 @@ class ResultsScreen extends StatelessWidget {
             
             Row(
               children: [
-                Expanded(child: _buildScoreItem('Équipe 1', scoreTeam1, AppTheme.team1Color)),
+                Expanded(child: _buildScoreItem('Équipe Rouge', scoreTeam1, AppTheme.teamRedColor)),
                 const SizedBox(width: 20),
                 Text(
                   'VS',
@@ -175,7 +175,7 @@ class ResultsScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 20),
-                Expanded(child: _buildScoreItem('Équipe 2', scoreTeam2, AppTheme.team2Color)),
+                Expanded(child: _buildScoreItem('Équipe Bleue', scoreTeam2, AppTheme.teamBlueColor)),
               ],
             ),
           ],
@@ -324,8 +324,8 @@ class ResultsScreen extends StatelessWidget {
   }
 
   String _getWinner() {
-    if (scoreTeam1 > scoreTeam2) return 'Équipe 1';
-    if (scoreTeam2 > scoreTeam1) return 'Équipe 2';
+    if (scoreTeam1 > scoreTeam2) return 'Équipe Rouge';
+    if (scoreTeam2 > scoreTeam1) return 'Équipe Bleue';
     return 'Égalité';
   }
 
@@ -333,8 +333,12 @@ class ResultsScreen extends StatelessWidget {
     // Retourner au lobby pour une nouvelle partie
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (context) => const HomeScreen(),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
       (route) => false,
     );
@@ -344,8 +348,12 @@ class ResultsScreen extends StatelessWidget {
     // Retourner à l'accueil
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (context) => const HomeScreen(),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
       (route) => false,
     );

@@ -108,6 +108,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _checkAuthStatus() async {
     try {
+      // Immediate state update - no artificial delays
       setState(() {
         _isLoggedIn = _gameService.isLoggedIn;
         _isLoading = false;
@@ -181,10 +182,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
           setState(() {
             _pendingRoomId = null;
           });
-          
+
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => JoinRoomScreen(initialRoomId: roomId),
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  JoinRoomScreen(initialRoomId: roomId),
+              transitionDuration: const Duration(milliseconds: 150),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
           );
         });

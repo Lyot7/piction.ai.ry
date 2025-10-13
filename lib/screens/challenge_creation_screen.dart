@@ -85,8 +85,11 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   ...List.generate(
                     3,
                     (index) => SlideAnimation(
-                      verticalOffset: 30.0,
-                      child: FadeInAnimation(child: _buildChallengeCard(index)),
+                      verticalOffset: 15.0,
+                      child: FadeInAnimation(
+                        duration: const Duration(milliseconds: 100),
+                        child: _buildChallengeCard(index),
+                      ),
                     ),
                   ),
                 ],
@@ -349,8 +352,13 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(
-              builder: (context) => const GameScreen(challenges: []),
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const GameScreen(challenges: []),
+              transitionDuration: const Duration(milliseconds: 150),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
           );
         }

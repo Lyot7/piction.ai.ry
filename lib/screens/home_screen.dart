@@ -52,7 +52,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   child: AnimationConfiguration.staggeredList(
                     position: 0,
-                    duration: const Duration(milliseconds: 500),
+                    duration: const Duration(milliseconds: 150),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -221,8 +221,12 @@ class HomeScreen extends StatelessWidget {
   void _navigateToCreateRoom(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const CreateRoomScreen(),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const CreateRoomScreen(),
+        transitionDuration: const Duration(milliseconds: 200),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     );
   }
@@ -230,8 +234,12 @@ class HomeScreen extends StatelessWidget {
   void _navigateToJoinRoom(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const JoinRoomScreen(),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => const JoinRoomScreen(),
+        transitionDuration: const Duration(milliseconds: 200),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     );
   }

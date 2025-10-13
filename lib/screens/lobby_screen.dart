@@ -26,6 +26,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
   String? _errorMessage;
   Timer? _refreshTimer;
   bool _isRefreshing = false;
+  bool _isChangingTeam = false;
+  DateTime? _lastTeamChangeAttempt;
+
+  // Tracking des joueurs en cours de changement d'équipe
+  // Map: playerId -> targetTeamColor
+  final Map<String, String> _playersTransitioning = {};
 
   @override
   void initState() {
@@ -131,9 +137,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
           child: AnimationLimiter(
             child: Column(
               children: AnimationConfiguration.toStaggeredList(
-                duration: const Duration(milliseconds: 600),
+                duration: const Duration(milliseconds: 150),
                 childAnimationBuilder: (widget) => SlideAnimation(
-                  verticalOffset: 30.0,
+                  verticalOffset: 20.0,
                   child: FadeInAnimation(child: widget),
                 ),
                 children: [
@@ -291,61 +297,48 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Widget _buildTeamsSection() {
-    // ✅ AJOUT: Vérifier si la session est vide
-    if (_gameSession.players.isEmpty) {
-      return Card(
-        color: Colors.orange[50],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Icon(Icons.hourglass_empty, color: Colors.orange[700], size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'Chargement des joueurs...',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange[700],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Si aucun joueur n\'apparaît après quelques secondes,\nvérifiez votre connexion internet',
-                style: TextStyle(
-                  color: Colors.orange[600],
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              const CircularProgressIndicator(),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Column(
       children: [
         // Équipe Rouge (haut)
-        _buildTeamCard('Équipe Rouge', 'red', AppTheme.team1Color),
+        _buildTeamCard('Équipe Rouge', 'red', AppTheme.teamRedColor),
         const SizedBox(height: 12),
         // Équipe Bleue (bas)
-        _buildTeamCard('Équipe Bleue', 'blue', AppTheme.team2Color),
+        _buildTeamCard('Équipe Bleue', 'blue', AppTheme.teamBlueColor),
       ],
     );
   }
 
   Widget _buildTeamCard(String teamName, String teamColor, Color color) {
+    // Joueurs actuellement dans l'équipe (en excluant ceux en transition vers une autre équipe)
     final teamPlayers = _gameSession.players
-        .where((p) => p.color == teamColor)
+        .where((p) => p.color == teamColor && !_playersTransitioning.containsKey(p.id))
         .toList();
+
+    // Joueurs en transition VERS cette équipe
+    final playersTransitioningToThisTeam = _playersTransitioning.entries
+        .where((entry) => entry.value == teamColor)
+        .map((entry) {
+          // Trouver le joueur dans la session
+          return _gameSession.players.firstWhere(
+            (p) => p.id == entry.key,
+            orElse: () => Player(
+              id: entry.key,
+              name: 'Chargement...',
+              color: teamColor,
+              role: null,
+              isHost: false,
+            ),
+          );
+        })
+        .toList();
+
     final currentPlayer = _gameService.currentPlayer;
     final isCurrentPlayerInThisTeam =
         currentPlayer != null &&
         teamPlayers.any((p) => p.id == currentPlayer.id);
+
+    // Calculer le compte total (joueurs actuels + en transition)
+    final totalCount = teamPlayers.length + playersTransitioningToThisTeam.length;
 
     return Card(
       elevation: 4,
@@ -411,7 +404,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       border: Border.all(color: color.withValues(alpha: 0.3)),
                     ),
                     child: Text(
-                      '${teamPlayers.length}/2',
+                      '$totalCount/2',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -423,12 +416,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Liste des joueurs (2 slots)
+              // Liste des slots (2 max)
               ...List.generate(2, (index) {
-                final player = index < teamPlayers.length
-                    ? teamPlayers[index]
-                    : null;
-                return _buildPlayerSlot(player, color);
+                // D'abord afficher les joueurs réels
+                if (index < teamPlayers.length) {
+                  return _buildPlayerSlot(teamPlayers[index], color, isLoading: false);
+                }
+                // Ensuite les joueurs en transition
+                else if (index < totalCount) {
+                  final transitionIndex = index - teamPlayers.length;
+                  return _buildPlayerSlot(
+                    playersTransitioningToThisTeam[transitionIndex],
+                    color,
+                    isLoading: true,
+                  );
+                }
+                // Enfin les slots vides
+                else {
+                  return _buildPlayerSlot(null, color, isLoading: false);
+                }
               }),
 
             ],
@@ -438,10 +444,82 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildPlayerSlot(Player? player, Color teamColor) {
+  Widget _buildPlayerSlot(Player? player, Color teamColor, {required bool isLoading}) {
     final isCurrentPlayer =
         player != null && _gameService.currentPlayer?.id == player.id;
 
+    // État de chargement : card grisée avec loader
+    if (isLoading && player != null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Colors.grey[400]!,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Avatar avec loader
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: Colors.grey[400],
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    player.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.normal,
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Changement en cours...',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Icône de chargement
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[500]!),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // État normal
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -469,7 +547,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
               shape: BoxShape.circle,
             ),
             child: player != null
-                ? Icon(Icons.person, color: Colors.white, size: 16)
+                ? const Icon(Icons.person, color: Colors.white, size: 16)
                 : Icon(Icons.person_outline, color: Colors.grey[500], size: 16),
           ),
           const SizedBox(width: 12),
@@ -516,7 +594,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
           if (isCurrentPlayer)
             Icon(Icons.check_circle, color: teamColor, size: 16),
           if (player != null && player.isHost == true)
-            Icon(Icons.star, color: Colors.amber, size: 16),
+            const Icon(Icons.star, color: Colors.amber, size: 16),
         ],
       ),
     );
@@ -642,7 +720,20 @@ class _LobbyScreenState extends State<LobbyScreen> {
     final currentPlayer = _gameService.currentPlayer;
     if (currentPlayer == null) return;
 
+    // Debounce: ignorer les clics trop rapides (< 300ms)
+    final now = DateTime.now();
+    if (_lastTeamChangeAttempt != null &&
+        now.difference(_lastTeamChangeAttempt!).inMilliseconds < 300) {
+      return;
+    }
+    _lastTeamChangeAttempt = now;
+
+    // Si un changement est déjà en cours, ignorer
+    if (_isChangingTeam) return;
+
     try {
+      setState(() => _isChangingTeam = true);
+
       if (isCurrentPlayerInThisTeam) {
         final otherTeamColor = teamColor == 'red' ? 'blue' : 'red';
         final currentGameSession = _gameService.currentGameSession;
@@ -656,6 +747,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
             return;
           }
         }
+
+        // Marquer le joueur comme en transition
+        setState(() {
+          _playersTransitioning[currentPlayer.id] = otherTeamColor;
+        });
 
         await _changeTeam(otherTeamColor);
       } else {
@@ -671,10 +767,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
           }
         }
 
+        // Marquer le joueur comme en transition
+        setState(() {
+          _playersTransitioning[currentPlayer.id] = teamColor;
+        });
+
         await _joinTeam(teamColor);
       }
     } catch (e) {
+      // En cas d'erreur, retirer de la transition
+      if (mounted) {
+        setState(() {
+          _playersTransitioning.remove(currentPlayer.id);
+        });
+      }
       _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() => _isChangingTeam = false);
+      }
     }
   }
 
@@ -682,8 +793,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
     try {
       final currentPlayer = _gameService.currentPlayer;
       if (currentPlayer == null) return;
-
-      await _gameService.forceSyncWithServer();
 
       final currentGameSession = _gameService.currentGameSession;
       if (currentGameSession == null) {
@@ -696,7 +805,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
           .length;
 
       if (targetTeamCount >= 2) {
-        throw Exception('L\'équipe $teamColor est déjà complète');
+        _showErrorMessage('L\'équipe est déjà complète');
+        return;
       }
 
       final currentPlayerInSession = currentGameSession.players
@@ -711,24 +821,36 @@ class _LobbyScreenState extends State<LobbyScreen> {
         await _gameService.joinGameSession(_gameSession.id, teamColor);
       }
 
-      await _refreshSessionOptimized();
+      // Le polling auto rafraîchit l'UI
     } catch (e) {
-      _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
+      // Ne pas afficher les erreurs transitoires ou de race condition
+      final errorMsg = e.toString().toLowerCase();
+      if (!errorMsg.contains('already in') &&
+          !errorMsg.contains('connection') &&
+          !errorMsg.contains('timeout')) {
+        _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
+      }
     }
   }
 
 
   Future<void> _changeTeam(String newTeamColor) async {
     try {
+      // Changement d'équipe rapide, le service gère la gestion des appels
       await _gameService.changeTeam(newTeamColor);
-      await _refreshSessionOptimized();
     } catch (e) {
-      _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
+      // Ne pas afficher les erreurs transitoires
+      final errorMsg = e.toString().toLowerCase();
+      if (!errorMsg.contains('already in') &&
+          !errorMsg.contains('connection') &&
+          !errorMsg.contains('timeout')) {
+        _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
+      }
     }
   }
 
   void _startAutoRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       if (mounted) {
         _refreshSessionOptimized();
       }
@@ -744,15 +866,83 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
       final updatedSession = _gameService.currentGameSession;
       if (updatedSession != null && mounted) {
-        setState(() {
+        // Détecter les transitions complètes
+        _detectCompletedTransitions(updatedSession);
+
+        // Ne faire setState que si la session a vraiment changé
+        // Comparer les joueurs pour éviter les rebuilds inutiles
+        final hasChanged = _hasSessionChanged(_gameSession, updatedSession);
+
+        if (hasChanged) {
+          setState(() {
+            _gameSession = updatedSession;
+          });
+        } else {
+          // Mise à jour silencieuse sans rebuild
           _gameSession = updatedSession;
-        });
+        }
       }
     } catch (e) {
       // Erreur silencieuse, le prochain refresh réessaiera
     } finally {
       _isRefreshing = false;
     }
+  }
+
+  /// Détecte les transitions complètes et retire les joueurs de _playersTransitioning
+  void _detectCompletedTransitions(GameSession updatedSession) {
+    final completedTransitions = <String>[];
+
+    for (final entry in _playersTransitioning.entries) {
+      final playerId = entry.key;
+      final targetColor = entry.value;
+
+      // Chercher le joueur dans la nouvelle session
+      final player = updatedSession.players
+          .where((p) => p.id == playerId)
+          .firstOrNull;
+
+      // Si le joueur est maintenant dans l'équipe cible, la transition est complète
+      if (player != null && player.color == targetColor) {
+        completedTransitions.add(playerId);
+      }
+    }
+
+    // Retirer les transitions complètes
+    if (completedTransitions.isNotEmpty) {
+      setState(() {
+        for (final playerId in completedTransitions) {
+          _playersTransitioning.remove(playerId);
+        }
+      });
+    }
+  }
+
+  /// Vérifie si la session a vraiment changé (pour éviter les rebuilds inutiles)
+  bool _hasSessionChanged(GameSession oldSession, GameSession newSession) {
+    // Comparer le nombre de joueurs
+    if (oldSession.players.length != newSession.players.length) return true;
+
+    // Comparer les IDs, couleurs et rôles des joueurs
+    for (var i = 0; i < oldSession.players.length; i++) {
+      final oldPlayer = oldSession.players[i];
+      final newPlayer = newSession.players.firstWhere(
+        (p) => p.id == oldPlayer.id,
+        orElse: () => oldPlayer,
+      );
+
+      if (oldPlayer.id != newPlayer.id ||
+          oldPlayer.color != newPlayer.color ||
+          oldPlayer.role != newPlayer.role ||
+          oldPlayer.name != newPlayer.name) {
+        return true;
+      }
+    }
+
+    // Comparer le statut
+    if (oldSession.status != newSession.status) return true;
+
+    return false;
   }
 
   void _showErrorMessage(String message) {
