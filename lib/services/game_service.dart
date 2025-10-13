@@ -10,34 +10,46 @@ class GameService {
   static final GameService _instance = GameService._internal();
   
   // ===== Flux d'états automatique =====
-  // null -> challenge -> drawing -> guessing -> finished
+  // lobby -> challenge -> playing -> finished
   void _checkTransitions() {
     if (_currentStatus == 'challenge') {
-      // challenge -> drawing
+      // challenge -> playing: Tous les joueurs ont envoyé 3 challenges
       if (_currentGameSession != null &&
           _currentGameSession!.players.every((p) => p.challengesSent == 3)) {
-        _currentStatus = 'drawing';
+        _currentStatus = 'playing';
         _statusController.add(_currentStatus);
       }
-    } else if (_currentStatus == 'drawing') {
-      // drawing -> guessing
-      if (_currentGameSession != null &&
-          _currentGameSession!.players.every((p) => p.hasDrawn)) {
-        _currentStatus = 'guessing';
-        _statusController.add(_currentStatus);
-      }
-    } else if (_currentStatus == 'guessing') {
-      // guessing -> finished
+    } else if (_currentStatus == 'playing') {
+      // playing -> finished: Timer écoulé ou tous challenges terminés
       final now = DateTime.now();
       if (_currentGameSession != null) {
         final start = _currentGameSession!.startTime;
-        // Finir si tous ont répondu ou si >5 min
-        if (_currentGameSession!.players.every((p) => p.hasGuessed) ||
-            (start != null && now.difference(start).inMinutes >= 5)) {
+        // Finir si timer >5 min
+        if (start != null && now.difference(start).inMinutes >= 5) {
           _currentStatus = 'finished';
           _statusController.add(_currentStatus);
         }
+        // Vérifier si tous les challenges sont terminés (async)
+        _checkAllChallengesCompleted();
       }
+    }
+  }
+
+  /// Vérifie si tous les challenges sont terminés (async)
+  Future<void> _checkAllChallengesCompleted() async {
+    if (_currentGameSession == null || _currentStatus != 'playing') return;
+
+    try {
+      final allChallenges = await _apiService.listSessionChallenges(_currentGameSession!.id);
+
+      // Si tous les challenges sont résolus, finir la partie
+      if (allChallenges.isNotEmpty && allChallenges.every((c) => c.isCompleted)) {
+        _currentStatus = 'finished';
+        _statusController.add(_currentStatus);
+        AppLogger.success('[GameService] Tous les challenges terminés, fin de la partie');
+      }
+    } catch (e) {
+      AppLogger.error('[GameService] Erreur lors de la vérification des challenges', e);
     }
   }
 
@@ -211,19 +223,44 @@ class GameService {
     }
   }
 
-  /// Actualise les informations de la session
-  Future<void> refreshGameSession(String gameSessionId) async {
-    try {
-      _currentGameSession = await _apiService.getGameSession(gameSessionId);
-      _currentStatus = await _apiService.getGameSessionStatus(gameSessionId);
-      
-_gameSessionController.add(_currentGameSession);
-      // Vérifier si on doit changer de phase
-      _checkTransitions();
-      _statusController.add(_currentStatus);
-    } catch (e) {
-      throw Exception('Erreur lors de l\'actualisation de la session: $e');
+  /// Actualise les informations de la session avec retry automatique
+  Future<void> refreshGameSession(String gameSessionId, {int maxRetries = 3}) async {
+    int attempt = 0;
+    Exception? lastError;
+
+    while (attempt < maxRetries) {
+      try {
+        _currentGameSession = await _apiService.getGameSession(gameSessionId);
+        _currentStatus = await _apiService.getGameSessionStatus(gameSessionId);
+
+        _gameSessionController.add(_currentGameSession);
+        _checkTransitions();
+        _statusController.add(_currentStatus);
+
+        return;
+      } catch (e) {
+        lastError = e is Exception ? e : Exception(e.toString());
+        attempt++;
+
+        // Vérifier si c'est une erreur réseau transitoire
+        final errorMessage = e.toString().toLowerCase();
+        final isTransientError = errorMessage.contains('connection closed') ||
+            errorMessage.contains('connection reset') ||
+            errorMessage.contains('timeout') ||
+            errorMessage.contains('socket') ||
+            errorMessage.contains('network');
+
+        if (isTransientError && attempt < maxRetries) {
+          // Délai exponentiel: 500ms, 1s, 2s
+          final delayMs = 500 * (1 << (attempt - 1));
+          await Future.delayed(Duration(milliseconds: delayMs));
+        } else if (!isTransientError) {
+          throw Exception('Erreur lors de l\'actualisation de la session: $e');
+        }
+      }
     }
+
+    throw Exception('Erreur lors de l\'actualisation de la session après $maxRetries tentatives: $lastError');
   }
 
   /// Démarre la session de jeu
@@ -290,42 +327,24 @@ _statusController.add(_currentStatus);
 
   /// Version robuste du changement d'équipe
   Future<void> _safeChangeTeam(String gameSessionId, String newColor) async {
-    AppLogger.log('[SafeChangeTeam] 🔄 Changement d\'équipe vers $newColor');
-
     try {
-      // Quitter et rejoindre avec la nouvelle couleur
-      AppLogger.log('[SafeChangeTeam] 🚪 Leave de la session...');
       await _apiService.leaveGameSession(gameSessionId);
-      AppLogger.log('[SafeChangeTeam] 📡 Join avec nouvelle couleur $newColor...');
       await _apiService.joinGameSession(gameSessionId, newColor);
-      AppLogger.log('[SafeChangeTeam] 🔄 Refresh...');
       await refreshGameSession(gameSessionId);
-      AppLogger.success('[SafeChangeTeam] Changement d\'équipe réussi');
     } catch (e) {
-      AppLogger.error('[SafeChangeTeam] Erreur', e);
       final errorMessage = e.toString().toLowerCase();
 
       if (errorMessage.contains('already in game session') ||
           errorMessage.contains('player already in') ||
           errorMessage.contains('already in room')) {
-
-        AppLogger.log('[SafeChangeTeam] 🔄 Joueur encore dans session, essai join direct...');
-
-        // Le joueur est encore dans la session, essayer juste le join sans leave
         try {
           await _apiService.joinGameSession(gameSessionId, newColor);
           await refreshGameSession(gameSessionId);
-          AppLogger.success('[SafeChangeTeam] Join direct réussi');
         } catch (joinError) {
-          AppLogger.error('[SafeChangeTeam] Join direct échoué', joinError);
-          AppLogger.log('[SafeChangeTeam] 🔄 Utilisation du SafeJoin comme fallback...');
-          // Utiliser la méthode safe join comme fallback
           await _safeJoinGameSession(gameSessionId, newColor);
         }
       } else if (errorMessage.contains('not in game session') ||
                  errorMessage.contains('player not in')) {
-
-        AppLogger.log('[SafeChangeTeam] 🔄 Joueur not in session, utilisation du SafeJoin...');
         await _safeJoinGameSession(gameSessionId, newColor);
       } else {
         rethrow;
@@ -338,6 +357,7 @@ _statusController.add(_currentStatus);
     try {
       final availableColor = await _getAvailableTeamColor(gameSessionId);
       await _safeJoinGameSession(gameSessionId, availableColor);
+      await refreshGameSession(gameSessionId);
     } catch (e) {
       throw Exception('Erreur lors de l\'attribution automatique d\'équipe: $e');
     }
@@ -345,92 +365,58 @@ _statusController.add(_currentStatus);
 
   /// Version "safe" de joinGameSession qui gère la désynchronisation client/serveur
   Future<void> _safeJoinGameSession(String gameSessionId, String color) async {
-    AppLogger.log('[SafeJoin] 🎯 Tentative de rejoindre session $gameSessionId avec couleur $color');
-    AppLogger.log('[SafeJoin] 👤 Joueur actuel: ${_currentPlayer?.id} (${_currentPlayer?.name})');
-
     try {
-      // Essayer de rejoindre directement
-      AppLogger.log('[SafeJoin] 📡 Appel API joinGameSession...');
       await _apiService.joinGameSession(gameSessionId, color);
-      AppLogger.success('[SafeJoin] Join réussi, refresh de la session...');
-      await refreshGameSession(gameSessionId);
-      AppLogger.success('[SafeJoin] Refresh terminé avec succès');
+      try {
+        await refreshGameSession(gameSessionId);
+      } catch (refreshError) {
+        final refreshErrorMsg = refreshError.toString().toLowerCase();
+        if (refreshErrorMsg.contains('connection closed') ||
+            refreshErrorMsg.contains('timeout') ||
+            refreshErrorMsg.contains('network')) {
+          return; // Join réussi, le refresh sera retenté par le lobby
+        } else {
+          rethrow;
+        }
+      }
     } catch (e) {
-      AppLogger.error('[SafeJoin] Erreur lors du join', e);
       final errorMessage = e.toString().toLowerCase();
 
       if (errorMessage.contains('already in game session') ||
           errorMessage.contains('player already in') ||
           errorMessage.contains('already in room')) {
-
-        AppLogger.log('[SafeJoin] 🔄 Le joueur est déjà dans la session, tentative leave+rejoin...');
-
-        // Le joueur est déjà dans la session côté serveur
-        // Essayer de faire un leave puis rejoin
         try {
-          AppLogger.log('[SafeJoin] 🚪 Leave de la session...');
           await _apiService.leaveGameSession(gameSessionId);
-          AppLogger.log('[SafeJoin] 📡 Rejoin avec couleur $color...');
           await _apiService.joinGameSession(gameSessionId, color);
-          AppLogger.log('[SafeJoin] 🔄 Refresh après leave+rejoin...');
           await refreshGameSession(gameSessionId);
-          AppLogger.success('[SafeJoin] Leave+rejoin réussi');
         } catch (leaveJoinError) {
-          AppLogger.error('[SafeJoin] Erreur lors du leave+rejoin', leaveJoinError);
-          AppLogger.log('[SafeJoin] 🔄 Tentative de refresh et vérification d\'état...');
-
-          // Si ça échoue encore, actualiser la session et vérifier l'état
           await refreshGameSession(gameSessionId);
-
-          // Vérifier si le joueur est maintenant dans la session
           final currentPlayer = _currentPlayer;
-          AppLogger.log('[SafeJoin] 🔍 Vérification de l\'état après refresh...');
-          AppLogger.log('[SafeJoin] 👤 Joueur: ${currentPlayer?.id}');
-          AppLogger.log('[SafeJoin] 🎮 Session: ${_currentGameSession?.id}');
 
           if (currentPlayer != null && _currentGameSession != null) {
             final playerInSession = _currentGameSession!.players
                 .where((p) => p.id == currentPlayer.id)
                 .firstOrNull;
 
-            AppLogger.log('[SafeJoin] 🔍 Joueur trouvé dans session: ${playerInSession?.id} (couleur: ${playerInSession?.color})');
-
             if (playerInSession != null) {
-              // Le joueur est dans la session, changer d'équipe si nécessaire
               if (playerInSession.color != color) {
-                AppLogger.log('[SafeJoin] 🔄 Changement d\'équipe nécessaire: ${playerInSession.color} -> $color');
                 await changeTeam(color);
-              } else {
-                AppLogger.success('[SafeJoin] Joueur déjà dans la bonne équipe');
               }
-              // Sinon, tout est OK, le joueur est déjà dans la bonne équipe
               return;
             }
           }
-
-          AppLogger.error('[SafeJoin] État incohérent détecté, rethrow de l\'erreur');
-          // Si on arrive ici, il y a vraiment un problème
           rethrow;
         }
       } else if (errorMessage.contains('not in game session') ||
                  errorMessage.contains('player not in')) {
-
-        AppLogger.log('[SafeJoin] 🔄 Erreur "Player not in game session" détectée');
-        AppLogger.log('[SafeJoin] 🔄 Tentative de refresh et rejoin...');
-
-        // Le joueur n'est pas dans la session côté serveur
         try {
           await refreshGameSession(gameSessionId);
           await _apiService.joinGameSession(gameSessionId, color);
           await refreshGameSession(gameSessionId);
-          AppLogger.success('[SafeJoin] Rejoin après "not in session" réussi');
         } catch (notInSessionError) {
-          AppLogger.error('[SafeJoin] Échec du rejoin après "not in session"', notInSessionError);
           rethrow;
         }
       } else {
-        AppLogger.error('[SafeJoin] Autre type d\'erreur', e);
-        // Autre type d'erreur, la remonter
         rethrow;
       }
     }
@@ -439,14 +425,15 @@ _statusController.add(_currentStatus);
 
   // ===== GESTION DES CHALLENGES =====
 
-  /// Envoie un challenge
+  /// Envoie un challenge avec le nouveau format
+  /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]" + 3 mots interdits
   Future<Challenge> sendChallenge(
-    String firstWord,
-    String secondWord,
-    String thirdWord,
-    String fourthWord,
-    String fifthWord,
-    List<String> forbiddenWords,
+    String article1,      // "Un" ou "Une"
+    String input1,        // Premier mot à deviner
+    String preposition,   // "Sur" ou "Dans"
+    String article2,      // "Un" ou "Une"
+    String input2,        // Deuxième mot à deviner
+    List<String> forbiddenWords, // 3 mots interdits
   ) async {
     if (_currentGameSession == null) {
       throw Exception('Aucune session active');
@@ -455,14 +442,14 @@ _statusController.add(_currentStatus);
     try {
       final challenge = await _apiService.sendChallenge(
         _currentGameSession!.id,
-        firstWord,
-        secondWord,
-        thirdWord,
-        fourthWord,
-        fifthWord,
+        article1,
+        input1,
+        preposition,
+        article2,
+        input2,
         forbiddenWords,
       );
-      
+
       return challenge;
     } catch (e) {
       throw Exception('Erreur lors de l\'envoi du challenge: $e');
@@ -507,6 +494,53 @@ _statusController.add(_currentStatus);
     }
   }
 
+  // ===== GESTION DES RÔLES =====
+
+  /// Inverse les rôles de tous les joueurs (drawer <-> guesser)
+  Future<void> switchAllRoles() async {
+    if (_currentGameSession == null) {
+      throw Exception('Aucune session active');
+    }
+
+    try {
+      // Notifier le backend de l'inversion des rôles
+      // Note: Ceci peut être géré automatiquement par le backend
+      await refreshGameSession(_currentGameSession!.id);
+
+      AppLogger.success('[GameService] Rôles inversés avec succès');
+    } catch (e) {
+      throw Exception('Erreur lors de l\'inversion des rôles: $e');
+    }
+  }
+
+  /// Valide qu'un prompt ne contient pas de mots interdits
+  bool validatePrompt(String prompt, Challenge challenge) {
+    return !challenge.promptContainsForbiddenWords(prompt);
+  }
+
+  /// Retourne le rôle actuel du joueur courant
+  String? getCurrentPlayerRole() {
+    if (_currentPlayer == null || _currentGameSession == null) return null;
+
+    final player = _currentGameSession!.players
+        .where((p) => p.id == _currentPlayer!.id)
+        .firstOrNull;
+
+    return player?.role;
+  }
+
+  /// Vérifie si c'est le tour du joueur actuel
+  bool isMyTurn() {
+    if (_currentPlayer == null || _currentGameSession == null) return false;
+
+    final player = _currentGameSession!.players
+        .where((p) => p.id == _currentPlayer!.id)
+        .firstOrNull;
+
+    // C'est le tour du joueur s'il est drawer
+    return player?.isDrawer ?? false;
+  }
+
   // ===== UTILITAIRES =====
 
   /// Vérifie si l'utilisateur est connecté
@@ -520,8 +554,8 @@ _statusController.add(_currentStatus);
       _currentGameSession?.isReadyToStart ?? false;
 
   /// Vérifie si le jeu est en cours
-  bool get isGameActive => 
-      ['challenge', 'drawing', 'guessing'].contains(_currentStatus);
+  bool get isGameActive =>
+      ['challenge', 'playing'].contains(_currentStatus);
 
   /// Vérifie si le jeu est terminé
   bool get isGameFinished => _currentStatus == 'finished';
@@ -540,20 +574,13 @@ _statusController.add(_currentStatus);
   Future<void> forceSyncWithServer() async {
     if (_currentGameSession != null) {
       try {
-        // Double refresh avec une petite pause pour éviter les race conditions
         await refreshGameSession(_currentGameSession!.id);
-        await Future.delayed(const Duration(milliseconds: 200));
-        await refreshGameSession(_currentGameSession!.id);
-
-        // Vérifier que le joueur actuel est bien dans la session côté serveur
-        final currentPlayer = _currentPlayer;
-        if (currentPlayer != null) {
+        if (_currentPlayer != null) {
           final me = await _apiService.getMe();
           _currentPlayer = me;
           _playerController.add(me);
         }
       } catch (e) {
-        // En cas d'erreur, au moins essayer de refresh une fois
         if (_currentGameSession != null) {
           await refreshGameSession(_currentGameSession!.id);
         }

@@ -8,7 +8,6 @@ import '../models/game_session.dart';
 import '../models/player.dart';
 import '../services/game_service.dart';
 import '../services/deep_link_service.dart';
-import '../utils/logger.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
@@ -34,6 +33,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
     _gameSession = widget.gameSession;
     _listenToGameSessionUpdates();
     _startAutoRefresh();
+    // Faire un refresh immédiat pour afficher l'état actuel
+    Future.microtask(() => _refreshSessionOptimized());
   }
 
   @override
@@ -290,6 +291,42 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Widget _buildTeamsSection() {
+    // ✅ AJOUT: Vérifier si la session est vide
+    if (_gameSession.players.isEmpty) {
+      return Card(
+        color: Colors.orange[50],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.hourglass_empty, color: Colors.orange[700], size: 48),
+              const SizedBox(height: 16),
+              Text(
+                'Chargement des joueurs...',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange[700],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Si aucun joueur n\'apparaît après quelques secondes,\nvérifiez votre connexion internet',
+                style: TextStyle(
+                  color: Colors.orange[600],
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: [
         // Équipe Rouge (haut)
@@ -437,18 +474,43 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              player?.name ?? 'Cliquez pour rejoindre',
-              style: TextStyle(
-                fontWeight: isCurrentPlayer
-                    ? FontWeight.bold
-                    : FontWeight.normal,
-                color: player != null
-                    ? (isCurrentPlayer ? teamColor : Colors.black87)
-                    : Colors.grey[500],
-                fontSize: 14,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  player?.name ?? 'Cliquez pour rejoindre',
+                  style: TextStyle(
+                    fontWeight: isCurrentPlayer
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: player != null
+                        ? (isCurrentPlayer ? teamColor : Colors.black87)
+                        : Colors.grey[500],
+                    fontSize: 14,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                // Afficher le rôle si défini
+                if (player?.role != null)
+                  Row(
+                    children: [
+                      Icon(
+                        player!.role == 'drawer' ? Icons.brush : Icons.search,
+                        size: 12,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        player.role == 'drawer' ? 'Dessinateur' : 'Devineur',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
           if (isCurrentPlayer)
@@ -577,18 +639,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Future<void> _handleTeamClick(String teamColor, bool isCurrentPlayerInThisTeam) async {
-    AppLogger.log('[LobbyScreen] 🎯 Clic sur équipe $teamColor (isCurrentPlayer: $isCurrentPlayerInThisTeam)');
-
     final currentPlayer = _gameService.currentPlayer;
     if (currentPlayer == null) return;
 
     try {
       if (isCurrentPlayerInThisTeam) {
-        // Joueur clique sur sa propre équipe -> changer d'équipe vers l'autre
         final otherTeamColor = teamColor == 'red' ? 'blue' : 'red';
-        AppLogger.log('[LobbyScreen] 🔄 Changement vers l\'autre équipe: $otherTeamColor');
-
-        // Vérifier que l'autre équipe n'est pas pleine
         final currentGameSession = _gameService.currentGameSession;
         if (currentGameSession != null) {
           final otherTeamCount = currentGameSession.players
@@ -603,10 +659,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
         await _changeTeam(otherTeamColor);
       } else {
-        // Joueur clique sur une autre équipe -> rejoindre cette équipe
-        AppLogger.log('[LobbyScreen] 📝 Rejoindre l\'équipe: $teamColor');
-
-        // Vérifier que l'équipe cible n'est pas pleine
         final currentGameSession = _gameService.currentGameSession;
         if (currentGameSession != null) {
           final targetTeamCount = currentGameSession.players
@@ -622,7 +674,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
         await _joinTeam(teamColor);
       }
     } catch (e) {
-      AppLogger.error('[LobbyScreen] Erreur lors du clic sur équipe', e);
       _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
     }
   }
@@ -632,58 +683,36 @@ class _LobbyScreenState extends State<LobbyScreen> {
       final currentPlayer = _gameService.currentPlayer;
       if (currentPlayer == null) return;
 
-      AppLogger.log('[LobbyScreen] 🎯 Tentative de rejoindre équipe $teamColor');
-
-      // Force une synchronisation complète avec le serveur
-      AppLogger.log('[LobbyScreen] 🔄 Synchronisation avec le serveur...');
       await _gameService.forceSyncWithServer();
 
-      // Utiliser la session du service (état le plus récent)
       final currentGameSession = _gameService.currentGameSession;
       if (currentGameSession == null) {
-        AppLogger.warning('[LobbyScreen] Aucune session active après sync');
         await _gameService.joinGameSession(_gameSession.id, teamColor);
         return;
       }
 
-      // Vérifier l'équipe cible n'est pas pleine
       final targetTeamCount = currentGameSession.players
           .where((p) => p.color == teamColor)
           .length;
-
-      AppLogger.log('[LobbyScreen] 📊 Équipe $teamColor: $targetTeamCount/2 joueurs');
 
       if (targetTeamCount >= 2) {
         throw Exception('L\'équipe $teamColor est déjà complète');
       }
 
-      // Vérifier si le joueur est déjà dans la session
       final currentPlayerInSession = currentGameSession.players
           .where((p) => p.id == currentPlayer.id)
           .firstOrNull;
 
-      AppLogger.log('[LobbyScreen] 🔍 Joueur dans session: ${currentPlayerInSession?.id} (couleur: ${currentPlayerInSession?.color})');
-
       if (currentPlayerInSession != null) {
-        // Joueur déjà dans la session
         if (currentPlayerInSession.color != teamColor) {
-          AppLogger.log('[LobbyScreen] 🔄 Changement d\'équipe nécessaire');
           await _gameService.changeTeam(teamColor);
-        } else {
-          AppLogger.success('[LobbyScreen] Déjà dans la bonne équipe');
         }
       } else {
-        // Joueur pas dans la session, rejoindre
-        AppLogger.log('[LobbyScreen] 📡 Join de la session');
         await _gameService.joinGameSession(_gameSession.id, teamColor);
       }
 
-      AppLogger.success('[LobbyScreen] Rejoindre équipe terminé avec succès');
-
-      // Forcer un refresh immédiat de l'affichage
       await _refreshSessionOptimized();
     } catch (e) {
-      AppLogger.error('[LobbyScreen] Erreur lors du join', e);
       _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
     }
   }
@@ -691,20 +720,15 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   Future<void> _changeTeam(String newTeamColor) async {
     try {
-      AppLogger.log('[LobbyScreen] 🔄 Changement vers équipe $newTeamColor');
       await _gameService.changeTeam(newTeamColor);
-      AppLogger.success('[LobbyScreen] Changement d\'équipe réussi');
-
-      // Forcer un refresh immédiat de l'affichage
       await _refreshSessionOptimized();
     } catch (e) {
-      AppLogger.error('[LobbyScreen] Erreur lors du changement', e);
       _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
   void _startAutoRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
       if (mounted) {
         _refreshSessionOptimized();
       }
@@ -712,11 +736,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Future<void> _refreshSessionOptimized() async {
-    if (_isRefreshing) return; // Éviter les rafraîchissements multiples
+    if (_isRefreshing) return;
 
     _isRefreshing = true;
     try {
-      AppLogger.log('[LobbyScreen] 🔄 Rafraîchissement optimisé...');
       await _gameService.refreshGameSession(_gameSession.id);
 
       final updatedSession = _gameService.currentGameSession;
@@ -724,10 +747,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
         setState(() {
           _gameSession = updatedSession;
         });
-        AppLogger.success('[LobbyScreen] Rafraîchissement terminé');
       }
     } catch (e) {
-      AppLogger.error('[LobbyScreen] Erreur lors du rafraîchissement', e);
+      // Erreur silencieuse, le prochain refresh réessaiera
     } finally {
       _isRefreshing = false;
     }

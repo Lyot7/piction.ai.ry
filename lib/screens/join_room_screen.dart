@@ -55,17 +55,27 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
     });
 
     try {
-      // D'abord récupérer les détails de la room pour vérifier qu'elle existe
-      final gameSession = await _apiService.getGameSession(roomId);
+      // D'abord vérifier que la room existe
+      await _apiService.getGameSession(roomId);
 
       // Rejoindre automatiquement une équipe disponible
       await _gameService.joinAvailableTeam(roomId);
 
+      // ✅ CORRECTION: Rafraîchir la session pour récupérer l'état avec le joueur
+      await _gameService.refreshGameSession(roomId);
+
+      // ✅ CORRECTION: Récupérer la session mise à jour depuis le service
+      final updatedSession = _gameService.currentGameSession;
+
+      if (updatedSession == null) {
+        throw Exception('Impossible de récupérer la session après le join');
+      }
+
       if (mounted) {
-        // Rediriger vers LobbyScreen avec la session trouvée
+        // ✅ CORRECTION: Passer la session MISE À JOUR au lobby
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => LobbyScreen(gameSession: gameSession),
+            builder: (context) => LobbyScreen(gameSession: updatedSession),
           ),
         );
       }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
-import '../models/challenge.dart' as models;
 import '../services/game_service.dart';
 import 'game_screen.dart';
 
@@ -19,18 +18,26 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   // Contrôleurs pour les champs de texte
   final List<List<TextEditingController>> _controllers = [];
 
+  // Contrôleurs pour les sélecteurs
+  final List<String> _articles1 = []; // "Un" ou "Une" pour input1
+  final List<String> _prepositions = []; // "Sur" ou "Dans"
+  final List<String> _articles2 = []; // "Un" ou "Une" pour input2
+
   @override
   void initState() {
     super.initState();
-    // Initialiser les contrôleurs pour chaque challenge
-    for (int i = 0; i < 4; i++) {
+    // Initialiser les contrôleurs pour 3 challenges (pas 4!)
+    for (int i = 0; i < 3; i++) {
       _controllers.add([
-        TextEditingController(), // input1
-        TextEditingController(), // input2
+        TextEditingController(), // input1 (objet)
+        TextEditingController(), // input2 (lieu)
         TextEditingController(), // forbidden1
         TextEditingController(), // forbidden2
         TextEditingController(), // forbidden3
       ]);
+      _articles1.add('Un');  // Valeur par défaut
+      _prepositions.add('Sur'); // Valeur par défaut
+      _articles2.add('Une'); // Valeur par défaut
     }
   }
 
@@ -74,9 +81,9 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   _buildInstructions(),
                   const SizedBox(height: 24),
                   
-                  // Challenges
+                  // Challenges (3 au lieu de 4)
                   ...List.generate(
-                    4,
+                    3,
                     (index) => SlideAnimation(
                       verticalOffset: 30.0,
                       child: FadeInAnimation(child: _buildChallengeCard(index)),
@@ -118,12 +125,12 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Créez 4 challenges sous la forme "Un/Une [OBJET] Sur/Dans Un/Une [LIEU]"',
+              'Créez 3 challenges sous la forme "Un/Une [OBJET] Sur/Dans Un/Une [LIEU]"',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              'Ajoutez 3 mots interdits par challenge pour compliquer la tâche !',
+              'Ajoutez 3 mots interdits par challenge. Ces challenges seront envoyés à l\'équipe adverse !',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 8),
@@ -187,19 +194,29 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Challenge principal
+        // Challenge principal - Première partie: "Un/Une [OBJET]"
         Row(
           children: [
-            Text(
-              'Un/Une',
-              style: Theme.of(context).textTheme.bodyLarge,
+            // Dropdown pour "Un" ou "Une"
+            DropdownButton<String>(
+              value: _articles1[index],
+              items: const [
+                DropdownMenuItem(value: 'Un', child: Text('Un')),
+                DropdownMenuItem(value: 'Une', child: Text('Une')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _articles1[index] = value!;
+                });
+              },
             ),
             const SizedBox(width: 8),
             Expanded(
               child: TextFormField(
                 controller: _controllers[index][0],
                 decoration: const InputDecoration(
-                  hintText: 'objet...',
+                  hintText: 'objet (ex: chat, livre, voiture)...',
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) => value?.isEmpty == true ? 'Requis' : null,
               ),
@@ -207,19 +224,44 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        
+
+        // Challenge principal - Deuxième partie: "Sur/Dans Un/Une [LIEU]"
         Row(
           children: [
-            Text(
-              'Sur/Dans Un/Une',
-              style: Theme.of(context).textTheme.bodyLarge,
+            // Dropdown pour "Sur" ou "Dans"
+            DropdownButton<String>(
+              value: _prepositions[index],
+              items: const [
+                DropdownMenuItem(value: 'Sur', child: Text('Sur')),
+                DropdownMenuItem(value: 'Dans', child: Text('Dans')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _prepositions[index] = value!;
+                });
+              },
+            ),
+            const SizedBox(width: 8),
+            // Dropdown pour "Un" ou "Une"
+            DropdownButton<String>(
+              value: _articles2[index],
+              items: const [
+                DropdownMenuItem(value: 'Un', child: Text('Un')),
+                DropdownMenuItem(value: 'Une', child: Text('Une')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _articles2[index] = value!;
+                });
+              },
             ),
             const SizedBox(width: 8),
             Expanded(
               child: TextFormField(
                 controller: _controllers[index][1],
                 decoration: const InputDecoration(
-                  hintText: 'lieu...',
+                  hintText: 'lieu (ex: table, maison, jardin)...',
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) => value?.isEmpty == true ? 'Requis' : null,
               ),
@@ -264,16 +306,15 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   }
 
   bool _canSubmit() {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
       final controllers = _controllers[i];
-      if (controllers.length < 6) return false;
-      
-      if (controllers[0].text.trim().isEmpty || // firstWord
-          controllers[1].text.trim().isEmpty || // secondWord
-          controllers[2].text.trim().isEmpty || // thirdWord
-          controllers[3].text.trim().isEmpty || // fourthWord
-          controllers[4].text.trim().isEmpty || // fifthWord
-          controllers[5].text.trim().isEmpty) { // forbiddenWords
+      if (controllers.length < 5) return false;
+
+      if (controllers[0].text.trim().isEmpty || // input1
+          controllers[1].text.trim().isEmpty || // input2
+          controllers[2].text.trim().isEmpty || // forbidden1
+          controllers[3].text.trim().isEmpty || // forbidden2
+          controllers[4].text.trim().isEmpty) { // forbidden3
         return false;
       }
     }
@@ -284,20 +325,26 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     if (_formKey.currentState?.validate() == true) {
       try {
         final gameService = GameService();
-        
-        // Envoyer chaque challenge à l'API
-        for (int i = 0; i < 4; i++) {
-          final challenge = _buildChallengeFromForm(i);
+
+        // Envoyer chaque challenge à l'API (3 challenges)
+        for (int i = 0; i < 3; i++) {
+          final controllers = _controllers[i];
+          final forbiddenWords = [
+            controllers[2].text.trim(),
+            controllers[3].text.trim(),
+            controllers[4].text.trim(),
+          ];
+
           await gameService.sendChallenge(
-            challenge.firstWord,
-            challenge.secondWord,
-            challenge.thirdWord,
-            challenge.fourthWord,
-            challenge.fifthWord,
-            challenge.forbiddenWords,
+            _articles1[i],              // "Un" ou "Une"
+            controllers[0].text.trim(), // input1 (objet)
+            _prepositions[i],           // "Sur" ou "Dans"
+            _articles2[i],              // "Un" ou "Une"
+            controllers[1].text.trim(), // input2 (lieu)
+            forbiddenWords,             // 3 mots interdits
           );
         }
-        
+
         // Navigation vers l'écran de jeu
         if (mounted) {
           Navigator.pushReplacement(
@@ -318,20 +365,5 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         }
       }
     }
-  }
-
-  /// Construit un challenge à partir du formulaire
-  models.Challenge _buildChallengeFromForm(int index) {
-    final controllers = _controllers[index];
-    return models.Challenge(
-      id: '', // L'API générera l'ID
-      gameSessionId: '', // Sera défini par l'API
-      firstWord: controllers[0].text.trim(),
-      secondWord: controllers[1].text.trim(),
-      thirdWord: controllers[2].text.trim(),
-      fourthWord: controllers[3].text.trim(),
-      fifthWord: controllers[4].text.trim(),
-      forbiddenWords: controllers[5].text.split(',').map((word) => word.trim()).where((word) => word.isNotEmpty).toList(),
-    );
   }
 }

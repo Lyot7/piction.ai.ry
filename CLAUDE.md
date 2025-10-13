@@ -2,11 +2,37 @@
 
 ## PROJECT CONTEXT
 You're developing **Piction.ia.ry**, a Flutter mobile collaborative game app where:
-- 4 players in 2 teams compete
-- Each team has 2 roles: "Drawer" and "Guesser" (alternating each turn)
-- Drawer writes a prompt to generate an image via StableDiffusion
-- Guesser tries to solve the challenge: "A [INPUT1] On/In A [INPUT2]"
-- Scoring: 100 base points, -10 per image regeneration, -1 per wrong answer, +25 per correct word
+
+### GAME RULES (Official from Formateur)
+
+**Players**: 4 joueurs répartis en 2 équipes de 2 (2v2)
+
+**Roles**: Chaque équipe a 2 rôles qui s'inversent à chaque tour:
+- **Dessinateur (Drawer)**: Écrit le prompt pour générer l'image
+- **Devineur (Guesser)**: Devine le challenge à partir de l'image
+
+**Score**: Chaque équipe commence avec **100 points**
+
+**Préparation**:
+- Chaque joueur crée **3 challenges** sous la forme:
+  - "Un/Une" [INPUT1] "Sur/Dans Un/Une" [INPUT2]
+  - Exemple: "Un chat sur une table"
+- Chaque challenge inclut **3 mots interdits**
+- Les challenges sont envoyés à **l'équipe adverse**
+
+**Phase de jeu (5 minutes)**:
+1. Le **dessinateur** reçoit le premier challenge
+2. Le dessinateur écrit un **prompt** pour StableDiffusion
+   - ⚠️ Le prompt **NE PEUT PAS** contenir les mots à deviner ni les mots interdits
+3. Le dessinateur envoie l'image au devineur
+   - Possibilité de **régénérer jusqu'à 2 fois** (coût: **-10 points** par régénération)
+4. Le **devineur** tente de résoudre le challenge
+   - Chaque **proposition erronée** coûte **-1 point**
+   - Chaque **mot trouvé** rapporte **+25 points**
+5. Lorsque le devineur a résolu son challenge, les **rôles sont inversés**
+6. La partie s'arrête quand:
+   - Toutes les équipes ont terminé leurs challenges, OU
+   - Le temps (5 min) est écoulé
 
 ## DEVELOPMENT PHILOSOPHY
 
@@ -56,35 +82,53 @@ lib/
 ## REQUIRED SCREENS
 
 1. **HomeScreen**: Create/Join game buttons
-2. **LobbyScreen**: Show 4 connected players, team/role assignment
-3. **ChallengeCreationScreen**: 4 forms for challenges, forbidden words list
-4. **GameScreen**: Generated image display, answer input, 5min timer, score, regenerate buttons
-5. **ResultsScreen**: Final scores, replay/home buttons
+2. **LobbyScreen**: Show 4 connected players, team/role assignment (display initial roles)
+3. **ChallengeCreationScreen**: **3 forms** for challenges (format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]" + 3 forbidden words)
+4. **GameScreen**:
+   - **Drawer mode**: Challenge display, prompt input (with validation), image generation, regenerate button
+   - **Guesser mode**: Image display, answer input, format hint, score feedback
+   - Common: 5min timer, team scores, role indicator, turn indicator
+5. **ResultsScreen**: Final team scores, replay/home buttons
 
 ## CRITICAL FEATURES
 
 ### GAME FLOW (State transitions)
-- null → challenge: Manual via 'Start Game'
-- challenge → drawing: Auto when all players sent 3 challenges
-- drawing → guessing: Auto when all players drew their challenge
-- guessing → finished: Auto when all answered or 5min elapsed
+- **lobby** → **challenge**: Manual via 'Start Game'
+- **challenge** → **playing**: Auto when all players sent **3 challenges**
+- **playing**: Cycles through challenges with role alternation:
+  1. Drawer receives challenge
+  2. Drawer writes prompt → validates (no forbidden/target words)
+  3. Drawer generates image (optional regen x2)
+  4. Guesser sees image and guesses
+  5. When resolved → **roles switch** → next challenge
+- **playing** → **finished**: Auto when all challenges done OR 5min elapsed
 
 Handle these transitions in GameService with states:
-- challenge: preparation phase
-- drawing: AI drawing phase  
-- guessing: guessing phase
-- finished: game end
+- **lobby**: waiting for players
+- **challenge**: players creating challenges
+- **playing**: active game with role alternation
+- **finished**: game end
 
 ### GAME MANAGEMENT
 - **5-minute timer**: Auto-stop at time end
-- **Point system**: Real-time calculation and display
-- **Word validation**: Check forbidden words not used in prompts
-- **Role alternation**: Auto management of drawer/guesser switching
+- **Team scores**: Each team starts at 100 points (shared score)
+- **Role tracking**: Track current drawer/guesser per team
+- **Role alternation**: Auto switch after each challenge resolution
+- **Prompt validation**: Check forbidden words AND target words not in prompt
+- **Turn indicator**: Show who's playing (drawer/guesser)
+
+### CHALLENGE FORMAT
+- **Structure**: "Un/Une" [INPUT1] "Sur/Dans Un/Une" [INPUT2]
+- **Target words**: INPUT1 and INPUT2 (words to guess)
+- **Forbidden words**: 3 additional words that cannot be used in prompt
+- **Validation**: Prompt must not contain any of: INPUT1, INPUT2, forbidden words
+- **Distribution**: Challenges sent to **opposing team**
 
 ### AI INTEGRATION
-- **StableDiffusion API**: Image generation from prompts
+- **StableDiffusion API**: Image generation from drawer's prompt
 - **Latency handling**: Loading indicators during generation
-- **Regeneration**: Max 2 times per challenge, costs 10 points
+- **Regeneration**: Max 2 times per challenge, costs **-10 points** per regen
+- **Prompt input**: Drawer manually writes prompt (not auto-generated)
 
 ## BEST PRACTICES
 

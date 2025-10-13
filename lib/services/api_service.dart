@@ -226,9 +226,62 @@ class ApiService {
   Future<GameSession> getGameSession(String gameSessionId) async {
     final response = await _request('GET', '/game_sessions/$gameSessionId');
     _handleResponse(response);
-    
+
     final data = jsonDecode(response.body);
-    return GameSession.fromJson(data);
+
+    // Parser la session de base
+    final session = GameSession.fromJson(data);
+
+    // Enrichir les joueurs avec leurs détails complets
+    if (session.players.isNotEmpty && session.players.first.name.isEmpty) {
+      final enrichedPlayers = await _enrichPlayersWithDetails(session.players, data);
+      return session.copyWith(players: enrichedPlayers);
+    }
+
+    return session;
+  }
+
+  /// Enrichit les joueurs minimaux avec leurs détails complets
+  Future<List<Player>> _enrichPlayersWithDetails(
+    List<Player> minimalPlayers,
+    Map<String, dynamic> sessionData,
+  ) async {
+    final enrichedPlayers = <Player>[];
+
+    // Récupérer l'ID du joueur actuel depuis la session ou depuis le token
+    final currentPlayerId = sessionData['player_id']?.toString() ?? _playerId;
+
+    // Déterminer les hosts une seule fois
+    final redTeam = (sessionData['red_team'] as List<dynamic>?) ?? [];
+    final blueTeam = (sessionData['blue_team'] as List<dynamic>?) ?? [];
+    final hostId = redTeam.isNotEmpty ? redTeam.first.toString() :
+                   (blueTeam.isNotEmpty ? blueTeam.first.toString() : null);
+
+    // Enrichir les joueurs en parallèle pour plus de rapidité
+    final futures = minimalPlayers.map((minimalPlayer) async {
+      try {
+        Player fullPlayer;
+
+        if (minimalPlayer.id == currentPlayerId) {
+          fullPlayer = await getMe();
+        } else {
+          fullPlayer = await getPlayer(minimalPlayer.id);
+        }
+
+        final isHost = minimalPlayer.id == hostId;
+
+        return fullPlayer.copyWith(
+          color: minimalPlayer.color,
+          isHost: isHost,
+        );
+      } catch (e) {
+        // En cas d'erreur, garder le joueur minimal
+        return minimalPlayer;
+      }
+    });
+
+    enrichedPlayers.addAll(await Future.wait(futures));
+    return enrichedPlayers;
   }
 
   /// Récupère le statut d'une session
@@ -249,25 +302,26 @@ class ApiService {
 
   // ===== CHALLENGES =====
 
-  /// Envoie un challenge
+  /// Envoie un challenge avec le nouveau format
+  /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]" + 3 mots interdits
   Future<Challenge> sendChallenge(
     String gameSessionId,
-    String firstWord,
-    String secondWord,
-    String thirdWord,
-    String fourthWord,
-    String fifthWord,
-    List<String> forbiddenWords,
+    String article1,      // "Un" ou "Une"
+    String input1,        // Premier mot à deviner
+    String preposition,   // "Sur" ou "Dans"
+    String article2,      // "Un" ou "Une"
+    String input2,        // Deuxième mot à deviner
+    List<String> forbiddenWords, // 3 mots interdits
   ) async {
     final response = await _request(
       'POST',
       '/game_sessions/$gameSessionId/challenges',
       body: {
-        'first_word': firstWord,
-        'second_word': secondWord,
-        'third_word': thirdWord,
-        'fourth_word': fourthWord,
-        'fifth_word': fifthWord,
+        'article1': article1,
+        'input1': input1,
+        'preposition': preposition,
+        'article2': article2,
+        'input2': input2,
         'forbidden_words': forbiddenWords,
       },
     );

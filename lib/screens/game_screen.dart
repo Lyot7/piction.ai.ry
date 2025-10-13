@@ -116,8 +116,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   /// Construit un prompt à partir du challenge
+  /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]"
   String _buildPromptFromChallenge(models.Challenge challenge) {
-    return '${challenge.firstWord} ${challenge.secondWord} ${challenge.thirdWord} ${challenge.fourthWord} ${challenge.fifthWord}';
+    return challenge.fullPhrase;
   }
 
   /// Récupère le challenge actuel
@@ -174,21 +175,14 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  /// Vérifie si la réponse est correcte
+  /// Vérifie si la réponse est correcte (contient un des mots cibles)
   bool _checkAnswer(String guess, models.Challenge challenge) {
     final guessLower = guess.toLowerCase();
-    final target1 = challenge.firstWord.toLowerCase();
-    final target2 = challenge.secondWord.toLowerCase();
-    final target3 = challenge.thirdWord.toLowerCase();
-    final target4 = challenge.fourthWord.toLowerCase();
-    final target5 = challenge.fifthWord.toLowerCase();
 
-    // Vérifier si la réponse contient les mots clés
-    return guessLower.contains(target1) || 
-           guessLower.contains(target2) || 
-           guessLower.contains(target3) || 
-           guessLower.contains(target4) || 
-           guessLower.contains(target5);
+    // Vérifier si la réponse contient input1 ou input2
+    return challenge.targetWords.any((target) =>
+      guessLower.contains(target.toLowerCase())
+    );
   }
 
   void _nextChallenge() {

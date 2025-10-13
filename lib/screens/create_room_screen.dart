@@ -24,18 +24,29 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
       final gameService = GameService();
+
+      // Créer la session et rejoindre l'équipe rouge
       final gameSession = await gameService.createGameSession();
-      
+      await gameService.joinGameSession(gameSession.id, 'red');
+
+      // Rafraîchir pour récupérer les joueurs enrichis
+      await gameService.refreshGameSession(gameSession.id);
+      final updatedSession = gameService.currentGameSession;
+
+      if (updatedSession == null) {
+        throw Exception('Impossible de récupérer la session');
+      }
+
       if (mounted) {
         setState(() {
-          _createdGameSession = gameSession;
+          _createdGameSession = updatedSession;
           _isLoading = false;
         });
-        
-        // Rediriger vers le lobby
+
+        // Rediriger immédiatement vers le lobby
         _goToLobby();
       }
     } catch (e) {

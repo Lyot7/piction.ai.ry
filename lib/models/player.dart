@@ -70,6 +70,25 @@ class Player {
     );
   }
 
+  /// Inverse le rôle du joueur (drawer <-> guesser)
+  Player toggleRole() {
+    String? newRole;
+    if (role == 'drawer') {
+      newRole = 'guesser';
+    } else if (role == 'guesser') {
+      newRole = 'drawer';
+    } else {
+      newRole = role; // Garde le rôle actuel si invalide
+    }
+    return copyWith(role: newRole);
+  }
+
+  /// Vérifie si le joueur est un dessinateur
+  bool get isDrawer => role == 'drawer';
+
+  /// Vérifie si le joueur est un devineur
+  bool get isGuesser => role == 'guesser';
+
   @override
   String toString() {
     return 'Player(id: $id, name: $name, color: $color, role: $role, isHost: $isHost, challengesSent: $challengesSent, hasDrawn: $hasDrawn, hasGuessed: $hasGuessed)';
