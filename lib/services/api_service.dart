@@ -138,6 +138,40 @@ class ApiService {
     return jwt;
   }
 
+  /// Se connecte avec juste un nom d'utilisateur (crée le compte si nécessaire)
+  Future<String> loginWithUsername(String username) async {
+    // Utiliser un mot de passe par défaut pour simplifier l'auth
+    const String defaultPassword = 'piction2024';
+    
+    try {
+      // D'abord essayer de se connecter (si l'utilisateur existe)
+      return await login(username, defaultPassword);
+    } catch (e) {
+      // Si échec, essayer de créer le joueur avec un nom unique
+      String uniqueUsername = username;
+      int attempt = 1;
+      
+      while (attempt <= 10) { // Limite à 10 tentatives
+        try {
+          await createPlayer(uniqueUsername, defaultPassword);
+          return await login(uniqueUsername, defaultPassword);
+        } catch (createError) {
+          final errorMessage = createError.toString();
+          if (errorMessage.contains('Player already exists')) {
+            // Si le joueur existe déjà, essayer avec un suffixe
+            attempt++;
+            uniqueUsername = '${username}_$attempt';
+          } else {
+            // Autre erreur, la remonter
+            throw Exception('Impossible de créer le compte "$uniqueUsername": $createError');
+          }
+        }
+      }
+      
+      throw Exception('Impossible de créer un nom d\'utilisateur unique après 10 tentatives');
+    }
+  }
+
   /// Récupère les informations du joueur connecté
   Future<Player> getMe() async {
     final response = await _request('GET', '/me');
@@ -212,18 +246,6 @@ class ApiService {
     _handleResponse(response);
   }
 
-  /// Récupère la liste des sessions disponibles
-  Future<List<GameSession>> getAvailableRooms() async {
-    final response = await _request('GET', '/game_sessions/available');
-    _handleResponse(response);
-    
-    final data = jsonDecode(response.body);
-    final sessionsList = data is List ? data : (data['items'] ?? []);
-    
-    return sessionsList
-        .map<GameSession>((sessionJson) => GameSession.fromJson(sessionJson))
-        .toList();
-  }
 
   // ===== CHALLENGES =====
 
@@ -300,7 +322,7 @@ class ApiService {
     _handleResponse(response);
   }
 
-  /// Génère une image pour un challenge via StableDiffusion (backend)
+  /// Génère une image pour un challenge via IA
   Future<String> generateImageForChallenge(
     String gameSessionId,
     String challengeId,
@@ -308,8 +330,11 @@ class ApiService {
   ) async {
     final response = await _request(
       'POST',
-      '/game_sessions/$gameSessionId/challenges/$challengeId/generate-image',
-      body: {'prompt': prompt},
+      '/api/game_sessions/$gameSessionId/challenges/$challengeId/draw',
+      body: {
+        'prompt': prompt,
+        'real': 'yes',
+      },
     );
     _handleResponse(response);
     

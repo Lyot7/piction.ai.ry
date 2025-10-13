@@ -4,6 +4,7 @@ class Player {
   final String name;
   final String? color; // "red" ou "blue"
   final String? role; // "drawer" ou "guesser"
+  final bool isHost; // Est le maître de la room
 
   // États pour gestion des phases automatiques
   final int challengesSent;  // Nombre de challenges envoyés
@@ -15,6 +16,7 @@ class Player {
     required this.name,
     this.color,
     this.role,
+    this.isHost = false,
     this.challengesSent = 0,
     this.hasDrawn = false,
     this.hasGuessed = false,
@@ -26,6 +28,7 @@ class Player {
       name: json['name'] ?? '',
       color: json['color'],
       role: json['role'],
+      isHost: json['isHost'] ?? false,
       challengesSent: json['challengesSent'] ?? 0,
       hasDrawn: json['hasDrawn'] ?? false,
       hasGuessed: json['hasGuessed'] ?? false,
@@ -38,6 +41,7 @@ class Player {
       'name': name,
       if (color != null) 'color': color,
       if (role != null) 'role': role,
+      'isHost': isHost,
       'challengesSent': challengesSent,
       'hasDrawn': hasDrawn,
       'hasGuessed': hasGuessed,
@@ -49,6 +53,7 @@ class Player {
     String? name,
     String? color,
     String? role,
+    bool? isHost,
     int? challengesSent,
     bool? hasDrawn,
     bool? hasGuessed,
@@ -58,6 +63,7 @@ class Player {
       name: name ?? this.name,
       color: color ?? this.color,
       role: role ?? this.role,
+      isHost: isHost ?? this.isHost,
       challengesSent: challengesSent ?? this.challengesSent,
       hasDrawn: hasDrawn ?? this.hasDrawn,
       hasGuessed: hasGuessed ?? this.hasGuessed,
@@ -66,7 +72,7 @@ class Player {
 
   @override
   String toString() {
-    return 'Player(id: $id, name: $name, color: $color, role: $role, challengesSent: $challengesSent, hasDrawn: $hasDrawn, hasGuessed: $hasGuessed)';
+    return 'Player(id: $id, name: $name, color: $color, role: $role, isHost: $isHost, challengesSent: $challengesSent, hasDrawn: $hasDrawn, hasGuessed: $hasGuessed)';
   }
 
   @override

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
 import '../services/game_service.dart';
+import 'join_room_screen.dart';
 
 /// Écran d'authentification (connexion/inscription)
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  final String? pendingRoomId;
+  final VoidCallback? onAuthSuccess;
+  
+  const AuthScreen({super.key, this.pendingRoomId, this.onAuthSuccess});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -13,16 +17,13 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _passwordController = TextEditingController();
   
-  bool _isLogin = true;
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
   void dispose() {
     _nameController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -36,13 +37,27 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       final gameService = GameService();
-      _isLogin
-          ? await gameService.login(_nameController.text, _passwordController.text)
-          : await gameService.createAccountAndLogin(_nameController.text, _passwordController.text);
+      
+      // Connexion avec juste le nom d'utilisateur
+      await gameService.loginWithUsername(_nameController.text);
 
       if (mounted) {
-        // Navigation vers l'écran d'accueil
-        Navigator.of(context).pushReplacementNamed('/home');
+        // Notifier le parent que l'auth a réussi
+        if (widget.onAuthSuccess != null) {
+          widget.onAuthSuccess!();
+        }
+        
+        // Si un lien de room est en attente, naviguer vers JoinRoom
+        if (widget.pendingRoomId != null) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => JoinRoomScreen(initialRoomId: widget.pendingRoomId!),
+            ),
+          );
+        } else {
+          // Sinon, navigation vers l'écran d'accueil
+          Navigator.of(context).pushReplacementNamed('/home');
+        }
       }
     } catch (e) {
       setState(() {
@@ -59,6 +74,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -100,14 +116,16 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 24),
                           
                           // Message d'erreur
-                          if (_errorMessage != null) _buildErrorMessage(),
+                          if (_errorMessage != null) _buildErrorMessage(_errorMessage!),
                           
                           // Bouton d'action
                           _buildActionButton(),
-                          const SizedBox(height: 24),
                           
-                          // Lien de basculement
-                          _buildToggleLink(),
+                          // Badge de partie en attente
+                          if (widget.pendingRoomId != null) ...[
+                            const SizedBox(height: 24),
+                            _buildPendingRoomBadge(),
+                          ],
                         ],
                       ),
                     ),
@@ -150,12 +168,16 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 8),
         
-        // Sous-titre
+        // Sous-titre avec indication de room si applicable
         Text(
-          _isLogin ? 'Connectez-vous pour jouer' : 'Créez votre compte',
+          widget.pendingRoomId != null 
+            ? 'Connectez-vous pour rejoindre la partie ${widget.pendingRoomId}'
+            : 'Entrez votre nom pour jouer',
           style: AppTheme.lightTheme.textTheme.bodyLarge?.copyWith(
-            color: AppTheme.textSecondary,
+            color: widget.pendingRoomId != null ? AppTheme.primaryColor : AppTheme.textSecondary,
+            fontWeight: widget.pendingRoomId != null ? FontWeight.w600 : FontWeight.normal,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -177,6 +199,7 @@ class _AuthScreenState extends State<AuthScreen> {
               decoration: const InputDecoration(
                 labelText: 'Nom d\'utilisateur',
                 prefixIcon: Icon(Icons.person),
+                hintText: 'Choisissez un nom unique',
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
@@ -188,33 +211,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 16),
-            
-            // Champ mot de passe
-            TextFormField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Mot de passe',
-                prefixIcon: Icon(Icons.lock),
-              ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Veuillez entrer votre mot de passe';
-                }
-                if (value.length < 6) {
-                  return 'Le mot de passe doit contenir au moins 6 caractères';
-                }
-                return null;
-              },
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildErrorMessage() {
+  Widget _buildErrorMessage(String errorMessage) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -234,7 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _errorMessage!,
+              errorMessage,
               style: TextStyle(
                 color: AppTheme.errorColor,
                 fontSize: 14,
@@ -247,6 +250,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildActionButton() {
+    
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -263,30 +267,63 @@ class _AuthScreenState extends State<AuthScreen> {
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               )
-            : Text(
-                _isLogin ? 'Se connecter' : 'Créer un compte',
-                style: const TextStyle(fontSize: 16),
+            : const Text(
+                'Commencer à jouer',
+                style: TextStyle(fontSize: 16),
               ),
       ),
     );
   }
 
-  Widget _buildToggleLink() {
-    return TextButton(
-      onPressed: _isLoading ? null : () {
-        setState(() {
-          _isLogin = !_isLogin;
-          _errorMessage = null;
-        });
-      },
-      child: Text(
-        _isLogin
-            ? 'Pas de compte ? Créez-en un'
-            : 'Déjà un compte ? Connectez-vous',
-        style: TextStyle(
-          color: AppTheme.primaryColor,
-          decoration: TextDecoration.underline,
+  Widget _buildPendingRoomBadge() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+          width: 1,
         ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.group,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Invitation à une partie',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'Vous rejoindrez automatiquement la partie ${widget.pendingRoomId} après connexion',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -178,3 +178,167 @@ Always think **"How can I make this simpler?"** rather than **"How can I make th
 2. Test build compilation with `flutter build apk --debug` (if Android SDK available) or `flutter build ios --debug`
 3. Fix any compilation errors immediately
 4. Never commit broken code
+
+## SPECIALIZED AGENTS & MCP TOOLS
+
+This project has access to specialized agents and MCP (Model Context Protocol) tools that enhance development capabilities. Use these tools **proactively** when their expertise matches the task at hand.
+
+### AVAILABLE AGENTS
+
+#### 1. mobile-developer 📱
+**Use for**: Flutter/React Native mobile development tasks
+**Invoke when**:
+- Implementing mobile-specific features (push notifications, deep linking)
+- Handling platform-specific code (iOS/Android native modules)
+- Optimizing app performance and bundle size
+- Managing offline-first data sync
+- Setting up platform-specific build configurations
+- Implementing responsive layouts for various screen sizes
+
+**Example scenarios**:
+- "Create a QR code sharing widget with platform-specific sharing"
+- "Optimize image caching for offline gameplay"
+- "Set up deep linking for room joining via URL"
+- "Implement background timer for game state sync"
+
+#### 2. ui-ux-designer 🎨
+**Use for**: User experience and interface design decisions
+**Invoke when**:
+- Designing user flows and navigation patterns
+- Creating wireframes for new screens
+- Improving accessibility and inclusive design
+- Establishing design system components
+- Planning information architecture
+- Conducting usability analysis
+
+**Example scenarios**:
+- "Design user flow for challenge creation and submission"
+- "Improve accessibility of timer and score display"
+- "Create consistent design patterns for game state feedback"
+- "Design onboarding experience for new players"
+
+#### 3. task-decomposition-expert 🧩
+**Use for**: Complex multi-step projects and workflow planning
+**Invoke when**:
+- Breaking down large features into manageable tasks
+- Planning architecture for complex integrations
+- Orchestrating multi-phase development work
+- Identifying dependencies and parallel work opportunities
+- Optimizing development workflows
+
+**Example scenarios**:
+- "Plan implementation of real-time multiplayer synchronization"
+- "Break down complete game flow from lobby to results"
+- "Design architecture for StableDiffusion API integration with retry logic"
+
+#### 4. mcp-expert 🔌
+**Use for**: MCP server configuration and integration (rarely needed for this project)
+**Invoke when**:
+- Configuring new MCP servers for API integrations
+- Setting up external service connections
+- Optimizing MCP performance and security
+
+**Note**: Less frequently used for this mobile-first Flutter app.
+
+#### 5. frontend-developer ⚛️
+**Available but limited relevance**: React specialist
+**Note**: This agent focuses on React/web development. For Flutter work, prefer the **mobile-developer** agent instead.
+
+### ENABLED MCP SERVERS
+
+#### context7
+**Purpose**: Enhanced context management and retrieval
+**Use for**: Managing complex codebase context and semantic search
+
+### AGENT USAGE BEST PRACTICES
+
+#### When to Use Agents
+✅ **DO use agents for**:
+- Complex features requiring specialized expertise
+- Multi-step implementations with multiple considerations
+- Design decisions requiring UX expertise
+- Mobile platform-specific implementations
+- Breaking down ambiguous or large requirements
+
+❌ **DON'T use agents for**:
+- Simple single-file edits
+- Straightforward bug fixes
+- Basic widget creation
+- Standard Flutter patterns you understand
+- Tasks you can complete directly in 1-2 steps
+
+#### Invoking Agents Efficiently
+```
+# Good: Specific, actionable request with context
+"Use mobile-developer agent to implement a background service
+that syncs game state every 30 seconds while maintaining
+battery efficiency."
+
+# Bad: Vague or too simple
+"Fix the button color" (too simple, do directly)
+"Make the app better" (too vague, no clear task)
+```
+
+#### Parallel Agent Invocation
+When tasks are independent, invoke multiple agents in parallel:
+```
+# Example: Launching parallel work
+1. mobile-developer: Implement offline data persistence
+2. ui-ux-designer: Design error state feedback patterns
+```
+
+### INTEGRATION WITH DEVELOPMENT WORKFLOW
+
+#### Pre-Development Phase
+1. **Planning**: Use `task-decomposition-expert` for complex features
+2. **Design**: Use `ui-ux-designer` for user flows and wireframes
+3. **Break down tasks**: Create implementation roadmap
+
+#### Development Phase
+1. **Implementation**: Use `mobile-developer` for Flutter-specific work
+2. **Follow SIMPLICITY FIRST**: Agents should simplify, not complicate
+3. **Verify with QA**: Run `flutter analyze` after agent work
+4. **Test builds**: Ensure agent-generated code compiles
+
+#### Quality Assurance
+- Agents must follow ALL project rules (simplicity, testing, linting)
+- Agent output is NOT exempt from `flutter analyze` requirements
+- Always verify agent work compiles and passes tests
+
+### WHEN NOT TO USE AGENTS
+
+Stay true to the **SIMPLICITY FIRST** philosophy:
+- If you can solve it directly in <5 minutes, do it yourself
+- If the task requires only basic Flutter knowledge, skip agents
+- If adding an agent adds complexity without clear benefit, avoid it
+- Remember: **"How can I make this simpler?"**
+
+### AGENT SELECTION QUICK REFERENCE
+
+| Task Type | Recommended Agent | Rationale |
+|-----------|------------------|-----------|
+| Flutter widget creation | mobile-developer | Mobile-specific patterns |
+| User flow design | ui-ux-designer | UX expertise |
+| Complex feature planning | task-decomposition-expert | Systematic breakdown |
+| Platform-specific code | mobile-developer | Native integration |
+| Multi-screen navigation | ui-ux-designer | Information architecture |
+| Performance optimization | mobile-developer | Mobile performance |
+| Accessibility improvements | ui-ux-designer | Inclusive design |
+| API integration planning | task-decomposition-expert | Integration orchestration |
+
+### EXAMPLE WORKFLOWS
+
+#### Implementing New Game Feature
+1. **Plan** (task-decomposition-expert): Break down feature requirements
+2. **Design** (ui-ux-designer): Create user flow and wireframes
+3. **Implement** (mobile-developer): Build Flutter components
+4. **Verify**: Run `flutter analyze` and test builds
+5. **Polish**: Iterate based on testing
+
+#### Fixing Mobile-Specific Bug
+1. **Analyze**: Review error logs and reproduction steps
+2. **Solve directly** if simple, OR use mobile-developer if platform-specific
+3. **Verify**: Test on both iOS and Android
+4. **QA**: Ensure fix doesn't break other features
+
+Remember: Agents are powerful tools, but direct implementation is often faster and simpler. Use judgment to decide when specialized expertise adds value.

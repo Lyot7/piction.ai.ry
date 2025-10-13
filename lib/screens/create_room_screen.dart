@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_service.dart';
+import '../models/game_session.dart';
+import '../widgets/share_qr_widget.dart';
 import 'lobby_screen.dart';
 
 /// Écran de création d'une nouvelle room
@@ -13,6 +15,7 @@ class CreateRoomScreen extends StatefulWidget {
 }
 
 class _CreateRoomScreenState extends State<CreateRoomScreen> {
+  GameSession? _createdGameSession;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -21,29 +24,37 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
+    
     try {
       final gameService = GameService();
       final gameSession = await gameService.createGameSession();
       
       if (mounted) {
-        // Naviguer vers le lobby avec la nouvelle session
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => LobbyScreen(gameSession: gameSession),
-          ),
-        );
+        setState(() {
+          _createdGameSession = gameSession;
+          _isLoading = false;
+        });
+        
+        // Rediriger vers le lobby
+        _goToLobby();
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      });
-    } finally {
       if (mounted) {
         setState(() {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
           _isLoading = false;
         });
       }
+    }
+  }
+
+  void _goToLobby() {
+    if (_createdGameSession != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => LobbyScreen(gameSession: _createdGameSession!),
+        ),
+      );
     }
   }
 
@@ -51,10 +62,19 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Créer une Room'),
+        title: Text(_createdGameSession == null ? 'Créer une Room' : 'Partie créée'),
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: _createdGameSession != null ? [
+          TextButton(
+            onPressed: _goToLobby,
+            child: const Text(
+              'Continuer',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ] : null,
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -68,53 +88,77 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
           ),
         ),
         child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: EdgeInsets.only(
-                  left: 24,
-                  right: 24,
-                  top: 24,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - MediaQuery.of(context).viewInsets.bottom - 48,
-                  ),
-                  child: AnimationLimiter(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: AnimationConfiguration.toStaggeredList(
-                        duration: const Duration(milliseconds: 600),
-                        childAnimationBuilder: (widget) => SlideAnimation(
-                          verticalOffset: 50.0,
-                          child: FadeInAnimation(child: widget),
-                        ),
-                        children: [
-                          // Icône et titre
-                          _buildHeader(),
-                          const SizedBox(height: 32),
-                          
-                          // Message d'erreur
-                          if (_errorMessage != null) ...[
-                            _buildErrorMessage(),
-                            const SizedBox(height: 24),
-                          ],
-                          
-                          // Bouton de création
-                          _buildCreateButton(),
-                          const SizedBox(height: 24),
-                          
-                          // Informations sur les rooms
-                          _buildRoomInfo(),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: _createdGameSession == null 
+              ? _buildCreationView()
+              : _buildQRShareView(),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCreationView() {
+    
+    return AnimationLimiter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: AnimationConfiguration.toStaggeredList(
+          duration: const Duration(milliseconds: 600),
+          childAnimationBuilder: (widget) => SlideAnimation(
+            verticalOffset: 50.0,
+            child: FadeInAnimation(child: widget),
+          ),
+          children: [
+            // Icône et titre
+            _buildHeader(),
+            const SizedBox(height: 32),
+            
+            // Message d'erreur
+            if (_errorMessage != null) ...[
+              _buildErrorMessage(_errorMessage!),
+              const SizedBox(height: 24),
+            ],
+            
+            // Bouton de création
+            _buildCreateButton(),
+            const SizedBox(height: 24),
+            
+            // Informations sur les rooms
+            _buildRoomInfo(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQRShareView() {
+    return AnimationLimiter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: AnimationConfiguration.toStaggeredList(
+          duration: const Duration(milliseconds: 600),
+          childAnimationBuilder: (widget) => SlideAnimation(
+            verticalOffset: 50.0,
+            child: FadeInAnimation(child: widget),
+          ),
+          children: [
+            // Message de succès
+            _buildSuccessHeader(),
+            const SizedBox(height: 24),
+            
+            // Widget QR Code
+            ShareQRWidget(
+              roomId: _createdGameSession!.id,
+              title: 'Partagez votre partie',
+              subtitle: 'Invitez vos amis à rejoindre la partie',
+            ),
+            const SizedBox(height: 24),
+            
+            // Bouton pour continuer vers le lobby
+            _buildContinueButton(),
+          ],
         ),
       ),
     );
@@ -156,7 +200,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   }
 
 
-  Widget _buildErrorMessage() {
+  Widget _buildErrorMessage(String errorMessage) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -176,7 +220,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _errorMessage!,
+              errorMessage,
               style: TextStyle(
                 color: AppTheme.errorColor,
                 fontSize: 14,
@@ -291,6 +335,60 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSuccessHeader() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.green.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.check_circle,
+            size: 48,
+            color: Colors.green,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Partie créée avec succès !',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Partagez le QR code ci-dessous avec vos amis',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: Colors.grey[600],
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContinueButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _goToLobby,
+        icon: const Icon(Icons.arrow_forward),
+        label: const Text('Aller au Lobby'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
     );
   }

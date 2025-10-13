@@ -19,6 +19,12 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await GameService().logout();
+              if (context.mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/auth', 
+                  (route) => false,
+                );
+              }
             },
             tooltip: 'Se déconnecter',
           ),

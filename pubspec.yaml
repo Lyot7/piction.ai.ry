@@ -48,10 +48,13 @@ dependencies:
   
   # QR Code generation and scanning
   qr_flutter: ^4.1.0
+  pretty_qr_code: ^3.3.0
   mobile_scanner: ^3.5.6
   
-  # Deep linking
+  # Deep linking and sharing
   app_links: ^3.4.5
+  share_plus: ^10.1.2
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:
