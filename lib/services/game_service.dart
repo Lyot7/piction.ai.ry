@@ -6,6 +6,58 @@ import 'api_service.dart';
 import '../utils/logger.dart';
 
 /// Service de gestion de l'état du jeu
+///
+/// NOTE REFACTORING SOLID:
+/// Cette classe viole actuellement les principes SOLID (>650 lignes, multiples responsabilités).
+/// La nouvelle architecture SOLID a été créée avec ces composants:
+///
+/// MANAGERS (Business Logic):
+/// - auth_manager.dart: Authentification uniquement
+/// - session_manager.dart: Gestion des sessions
+/// - team_manager.dart: Gestion des équipes
+/// - challenge_manager.dart: Gestion des challenges
+/// - role_manager.dart: Gestion des rôles
+/// - game_state_manager.dart: Transitions d'état (lobby→challenge→playing→finished)
+/// - score_manager.dart: Gestion des scores
+/// - timer_manager.dart: Gestion du timer
+///
+/// REPOSITORIES (Data Access):
+/// - player_repository.dart: CRUD joueurs
+/// - game_session_repository.dart: CRUD sessions
+/// - challenge_repository.dart: CRUD challenges
+/// - image_repository.dart: Génération d'images
+///
+/// VALIDATORS (Validation):
+/// - prompt_validator.dart: Validation des prompts
+/// - challenge_validator.dart: Validation des formulaires de challenges
+/// - team_validator.dart: Validation des équipes
+/// - session_validator.dart: Validation des sessions
+///
+/// WIDGETS (UI Components):
+/// - 17 widgets extraits: lobby/, game/, challenge/, common/
+///
+/// SERVICES & UTILS:
+/// - stream_service.dart: Gestion des streams
+/// - polling_service.dart: Polling auto-refresh
+/// - session_comparator.dart: Comparaison de sessions
+/// - constants.dart: Constantes de l'app
+/// - string_utils.dart: Utilitaires string
+///
+/// Pour refactorer un écran:
+/// 1. Injecter les managers nécessaires via constructeur (DIP)
+/// 2. Utiliser les validators pour valider les inputs
+/// 3. Utiliser les repositories pour l'accès aux données
+/// 4. Composer avec les widgets extraits
+///
+/// Exemple:
+/// ```dart
+/// class MyScreen extends StatefulWidget {
+///   final AuthManager authManager;
+///   final SessionManager sessionManager;
+///
+///   const MyScreen({required this.authManager, required this.sessionManager});
+/// }
+/// ```
 class GameService {
   static final GameService _instance = GameService._internal();
   

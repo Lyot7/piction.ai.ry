@@ -348,13 +348,21 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           );
         }
 
+        // Attendre que tous les joueurs aient envoyé leurs challenges
+        // Le backend passe de "challenge" à "playing" automatiquement
+        if (mounted) {
+          _showWaitingDialog();
+          await _waitForGameToStart(gameService);
+        }
+
         // Navigation vers l'écran de jeu
         if (mounted) {
+          Navigator.pop(context); // Fermer le dialog
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) =>
-                  const GameScreen(challenges: []),
+                  const GameScreen(),
               transitionDuration: const Duration(milliseconds: 150),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(opacity: animation, child: child);
@@ -364,6 +372,9 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         }
       } catch (e) {
         if (mounted) {
+          // Fermer le dialog si ouvert
+          Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst || !route.willHandlePopInternally);
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Erreur lors de l\'envoi des challenges: ${e.toString()}'),
@@ -373,5 +384,62 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         }
       }
     }
+  }
+
+  void _showWaitingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'En attente des autres joueurs...',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'La partie démarre quand tous les joueurs ont créé leurs challenges',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _waitForGameToStart(GameService gameService) async {
+    // Polling toutes les 2 secondes pour vérifier si le status est "playing"
+    const maxWaitTime = Duration(minutes: 5);
+    const pollInterval = Duration(seconds: 2);
+    final startTime = DateTime.now();
+
+    while (DateTime.now().difference(startTime) < maxWaitTime) {
+      try {
+        await gameService.refreshGameSession(gameService.currentGameSession!.id);
+        final status = gameService.currentStatus;
+
+        if (status == 'playing') {
+          // Le jeu a commencé !
+          return;
+        }
+
+        // Attendre avant le prochain poll
+        await Future.delayed(pollInterval);
+      } catch (e) {
+        // Ignorer les erreurs transitoires, continuer le polling
+        await Future.delayed(pollInterval);
+      }
+    }
+
+    // Timeout après 5 minutes
+    throw Exception('Timeout: Le jeu n\'a pas démarré après 5 minutes');
   }
 }

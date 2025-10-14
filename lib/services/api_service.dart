@@ -455,7 +455,7 @@ class ApiService {
   ) async {
     final response = await _request(
       'POST',
-      '/api/game_sessions/$gameSessionId/challenges/$challengeId/draw',
+      '/game_sessions/$gameSessionId/challenges/$challengeId/draw',
       body: {
         'prompt': prompt,
         'real': 'yes',
