@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import 'create_room_screen.dart';
 import 'join_room_screen.dart';
 
 /// Écran d'accueil principal de Piction.ia.ry
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final GameFacade gameFacade;
+
+  const HomeScreen({
+    super.key,
+    required this.gameFacade,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +23,10 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await GameService().logout();
+              await gameFacade.logout();
               if (context.mounted) {
                 Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/auth', 
+                  '/auth',
                   (route) => false,
                 );
               }
@@ -222,7 +227,9 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => const CreateRoomScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => CreateRoomScreen(
+          gameFacade: gameFacade,
+        ),
         transitionDuration: const Duration(milliseconds: 200),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
@@ -235,7 +242,9 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => const JoinRoomScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => JoinRoomScreen(
+          gameFacade: gameFacade,
+        ),
         transitionDuration: const Duration(milliseconds: 200),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);

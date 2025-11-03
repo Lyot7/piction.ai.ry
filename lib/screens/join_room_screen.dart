@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
-import '../services/api_service.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
+import '../services/deep_link_service.dart';
 import 'lobby_screen.dart';
 import 'qr_scanner_screen.dart';
 
 /// Écran pour rejoindre une room existante
 class JoinRoomScreen extends StatefulWidget {
+  final GameFacade gameFacade;
+  final DeepLinkService? deepLinkService;
   final String? initialRoomId;
-  
-  const JoinRoomScreen({super.key, this.initialRoomId});
+
+  const JoinRoomScreen({
+    super.key,
+    required this.gameFacade,
+    this.deepLinkService,
+    this.initialRoomId,
+  });
 
   @override
   State<JoinRoomScreen> createState() => _JoinRoomScreenState();
@@ -18,8 +25,6 @@ class JoinRoomScreen extends StatefulWidget {
 
 class _JoinRoomScreenState extends State<JoinRoomScreen> {
   final _searchController = TextEditingController();
-  final _apiService = ApiService();
-  final _gameService = GameService();
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -55,28 +60,24 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
     });
 
     try {
-      // D'abord vérifier que la room existe
-      await _apiService.getGameSession(roomId);
-
       // Rejoindre automatiquement une équipe disponible
-      await _gameService.joinAvailableTeam(roomId);
+      await widget.gameFacade.joinAvailableTeam(roomId);
 
-      // ✅ CORRECTION: Rafraîchir la session pour récupérer l'état avec le joueur
-      await _gameService.refreshGameSession(roomId);
-
-      // ✅ CORRECTION: Récupérer la session mise à jour depuis le service
-      final updatedSession = _gameService.currentGameSession;
+      // Récupérer la session mise à jour depuis le service
+      final updatedSession = widget.gameFacade.currentGameSession;
 
       if (updatedSession == null) {
         throw Exception('Impossible de récupérer la session après le join');
       }
 
       if (mounted) {
-        // ✅ CORRECTION: Passer la session MISE À JOUR au lobby
+        // Passer la session MISE À JOUR au lobby
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                LobbyScreen(gameSession: updatedSession),
+            pageBuilder: (context, animation, secondaryAnimation) => LobbyScreen(
+              gameFacade: widget.gameFacade,
+              gameSession: updatedSession,
+            ),
             transitionDuration: const Duration(milliseconds: 150),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(opacity: animation, child: child);

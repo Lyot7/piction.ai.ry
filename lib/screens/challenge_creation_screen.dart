@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import 'game_screen.dart';
 
 /// Écran de création des challenges avant le début du jeu
 class ChallengeCreationScreen extends StatefulWidget {
-  const ChallengeCreationScreen({super.key});
+  final GameFacade gameFacade;
+
+  const ChallengeCreationScreen({
+    super.key,
+    required this.gameFacade,
+  });
 
   @override
   State<ChallengeCreationScreen> createState() => _ChallengeCreationScreenState();
@@ -327,7 +332,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   Future<void> _submitChallenges() async {
     if (_formKey.currentState?.validate() == true) {
       try {
-        final gameService = GameService();
+        final gameService = widget.gameFacade;
 
         // Envoyer chaque challenge à l'API (3 challenges)
         for (int i = 0; i < 3; i++) {
@@ -339,6 +344,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           ];
 
           await gameService.sendChallenge(
+            gameService.currentGameSession!.id, // gameSessionId
             _articles1[i],              // "Un" ou "Une"
             controllers[0].text.trim(), // input1 (objet)
             _prepositions[i],           // "Sur" ou "Dans"
@@ -361,8 +367,9 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  const GameScreen(),
+              pageBuilder: (context, animation, secondaryAnimation) => GameScreen(
+                gameFacade: widget.gameFacade,
+              ),
               transitionDuration: const Duration(milliseconds: 150),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(opacity: animation, child: child);
@@ -415,7 +422,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     );
   }
 
-  Future<void> _waitForGameToStart(GameService gameService) async {
+  Future<void> _waitForGameToStart(GameFacade gameFacade) async {
     // Polling toutes les 2 secondes pour vérifier si le status est "playing"
     const maxWaitTime = Duration(minutes: 5);
     const pollInterval = Duration(seconds: 2);
@@ -423,8 +430,8 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
 
     while (DateTime.now().difference(startTime) < maxWaitTime) {
       try {
-        await gameService.refreshGameSession(gameService.currentGameSession!.id);
-        final status = gameService.currentStatus;
+        await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
+        final status = gameFacade.currentStatus;
 
         if (status == 'playing') {
           // Le jeu a commencé !

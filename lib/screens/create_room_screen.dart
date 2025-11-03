@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import '../models/game_session.dart';
 import '../widgets/share_qr_widget.dart';
 import 'lobby_screen.dart';
 
 /// Écran de création d'une nouvelle room
 class CreateRoomScreen extends StatefulWidget {
-  const CreateRoomScreen({super.key});
+  final GameFacade gameFacade;
+
+  const CreateRoomScreen({
+    super.key,
+    required this.gameFacade,
+  });
 
   @override
   State<CreateRoomScreen> createState() => _CreateRoomScreenState();
@@ -26,15 +31,13 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
     });
 
     try {
-      final gameService = GameService();
-
       // Créer la session et rejoindre l'équipe rouge
-      final gameSession = await gameService.createGameSession();
-      await gameService.joinGameSession(gameSession.id, 'red');
+      final gameSession = await widget.gameFacade.createGameSession();
+      await widget.gameFacade.joinGameSession(gameSession.id, 'red');
 
       // Rafraîchir pour récupérer les joueurs enrichis
-      await gameService.refreshGameSession(gameSession.id);
-      final updatedSession = gameService.currentGameSession;
+      await widget.gameFacade.refreshGameSession(gameSession.id);
+      final updatedSession = widget.gameFacade.currentGameSession;
 
       if (updatedSession == null) {
         throw Exception('Impossible de récupérer la session');
@@ -63,8 +66,10 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
     if (_createdGameSession != null) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              LobbyScreen(gameSession: _createdGameSession!),
+          pageBuilder: (context, animation, secondaryAnimation) => LobbyScreen(
+            gameFacade: widget.gameFacade,
+            gameSession: _createdGameSession!,
+          ),
           transitionDuration: const Duration(milliseconds: 150),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);

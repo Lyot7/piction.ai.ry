@@ -6,22 +6,26 @@ import 'package:share_plus/share_plus.dart';
 import '../themes/app_theme.dart';
 import '../models/game_session.dart';
 import '../models/player.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import '../services/deep_link_service.dart';
 import '../utils/logger.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
+  final GameFacade gameFacade;
   final GameSession gameSession;
 
-  const LobbyScreen({super.key, required this.gameSession});
+  const LobbyScreen({
+    super.key,
+    required this.gameFacade,
+    required this.gameSession,
+  });
 
   @override
   State<LobbyScreen> createState() => _LobbyScreenState();
 }
 
 class _LobbyScreenState extends State<LobbyScreen> {
-  final GameService _gameService = GameService();
   late GameSession _gameSession;
   bool _isLoading = false;
   String? _errorMessage;
@@ -58,7 +62,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   void _listenToGameSessionUpdates() {
-    _gameService.gameSessionStream.listen((gameSession) {
+    widget.gameFacade.gameSessionStream.listen((gameSession) {
       if (gameSession != null && mounted) {
         setState(() {
           _gameSession = gameSession;
@@ -68,7 +72,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   bool get _isHost {
-    final currentPlayer = _gameService.currentPlayer;
+    final currentPlayer = widget.gameFacade.currentPlayer;
     return currentPlayer != null &&
         _gameSession.players.any((player) => 
             player.id == currentPlayer.id && player.isHost == true);
@@ -103,7 +107,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     });
 
     try {
-      await _gameService.startGameSession();
+      await widget.gameFacade.startGameSession();
       // La navigation vers l'écran de création de challenges se fera automatiquement
       // via le stream de statut
     } catch (e) {
@@ -348,7 +352,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
         })
         .toList();
 
-    final currentPlayer = _gameService.currentPlayer;
+    final currentPlayer = widget.gameFacade.currentPlayer;
     final isCurrentPlayerInThisTeam =
         currentPlayer != null &&
         teamPlayers.any((p) => p.id == currentPlayer.id);
@@ -462,7 +466,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   Widget _buildPlayerSlot(Player? player, Color teamColor, {required bool isLoading}) {
     final isCurrentPlayer =
-        player != null && _gameService.currentPlayer?.id == player.id;
+        player != null && widget.gameFacade.currentPlayer?.id == player.id;
 
     // État de chargement : card grisée avec loader
     if (isLoading && player != null) {
@@ -729,7 +733,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Future<void> _handleTeamClick(String teamColor, bool isCurrentPlayerInThisTeam) async {
-    final currentPlayer = _gameService.currentPlayer;
+    final currentPlayer = widget.gameFacade.currentPlayer;
     if (currentPlayer == null) return;
 
     // Debounce: ignorer les clics trop rapides (< 300ms)
@@ -748,7 +752,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
       if (isCurrentPlayerInThisTeam) {
         final otherTeamColor = teamColor == 'red' ? 'blue' : 'red';
-        final currentGameSession = _gameService.currentGameSession;
+        final currentGameSession = widget.gameFacade.currentGameSession;
         if (currentGameSession != null) {
           final otherTeamCount = currentGameSession.players
               .where((p) => p.color == otherTeamColor)
@@ -767,7 +771,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
         await _changeTeam(otherTeamColor);
       } else {
-        final currentGameSession = _gameService.currentGameSession;
+        final currentGameSession = widget.gameFacade.currentGameSession;
         if (currentGameSession != null) {
           final targetTeamCount = currentGameSession.players
               .where((p) => p.color == teamColor)
@@ -803,12 +807,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   Future<void> _joinTeam(String teamColor) async {
     try {
-      final currentPlayer = _gameService.currentPlayer;
+      final currentPlayer = widget.gameFacade.currentPlayer;
       if (currentPlayer == null) return;
 
-      final currentGameSession = _gameService.currentGameSession;
+      final currentGameSession = widget.gameFacade.currentGameSession;
       if (currentGameSession == null) {
-        await _gameService.joinGameSession(_gameSession.id, teamColor);
+        await widget.gameFacade.joinGameSession(_gameSession.id, teamColor);
         return;
       }
 
@@ -827,10 +831,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
       if (currentPlayerInSession != null) {
         if (currentPlayerInSession.color != teamColor) {
-          await _gameService.changeTeam(teamColor);
+          await widget.gameFacade.changeTeam(_gameSession.id, teamColor);
         }
       } else {
-        await _gameService.joinGameSession(_gameSession.id, teamColor);
+        await widget.gameFacade.joinGameSession(_gameSession.id, teamColor);
       }
 
       // Le polling auto rafraîchit l'UI
@@ -849,7 +853,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Future<void> _changeTeam(String newTeamColor) async {
     try {
       // Changement d'équipe rapide, le service gère la gestion des appels
-      await _gameService.changeTeam(newTeamColor);
+      await widget.gameFacade.changeTeam(_gameSession.id, newTeamColor);
     } catch (e) {
       // Ne pas afficher les erreurs transitoires
       final errorMsg = e.toString().toLowerCase();
@@ -876,9 +880,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
     _isRefreshing = true;
     try {
-      await _gameService.refreshGameSession(_gameSession.id);
+      await widget.gameFacade.refreshGameSession(_gameSession.id);
 
-      final updatedSession = _gameService.currentGameSession;
+      final updatedSession = widget.gameFacade.currentGameSession;
       if (updatedSession != null && mounted) {
         // Détecter les transitions complètes
         _detectCompletedTransitions(updatedSession);

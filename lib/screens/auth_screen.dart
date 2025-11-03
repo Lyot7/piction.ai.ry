@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import 'join_room_screen.dart';
 
 /// Écran d'authentification (connexion/inscription)
 class AuthScreen extends StatefulWidget {
+  final GameFacade gameFacade;
   final String? pendingRoomId;
   final VoidCallback? onAuthSuccess;
-  
-  const AuthScreen({super.key, this.pendingRoomId, this.onAuthSuccess});
+
+  const AuthScreen({
+    super.key,
+    required this.gameFacade,
+    this.pendingRoomId,
+    this.onAuthSuccess,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -36,23 +42,23 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      final gameService = GameService();
-      
       // Connexion avec juste le nom d'utilisateur
-      await gameService.loginWithUsername(_nameController.text);
+      await widget.gameFacade.loginWithUsername(_nameController.text);
 
       if (mounted) {
         // Notifier le parent que l'auth a réussi
         if (widget.onAuthSuccess != null) {
           widget.onAuthSuccess!();
         }
-        
+
         // Si un lien de room est en attente, naviguer vers JoinRoom
         if (widget.pendingRoomId != null) {
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  JoinRoomScreen(initialRoomId: widget.pendingRoomId!),
+              pageBuilder: (context, animation, secondaryAnimation) => JoinRoomScreen(
+                gameFacade: widget.gameFacade,
+                initialRoomId: widget.pendingRoomId!,
+              ),
               transitionDuration: const Duration(milliseconds: 150),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(opacity: animation, child: child);

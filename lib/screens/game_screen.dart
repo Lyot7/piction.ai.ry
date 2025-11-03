@@ -3,21 +3,25 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../themes/app_theme.dart';
 import '../models/challenge.dart' as models;
-import '../services/game_service.dart';
+import '../services/game_facade.dart';
 import '../services/stable_diffusion_service.dart';
 import '../utils/logger.dart';
 import 'results_screen.dart';
 
 /// Écran de jeu principal avec gestion des rôles drawer/guesser
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  final GameFacade gameFacade;
+
+  const GameScreen({
+    super.key,
+    required this.gameFacade,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> {
-  final GameService _gameService = GameService();
 
   // Timer de 5 minutes
   static const int totalSeconds = 5 * 60;
@@ -51,16 +55,16 @@ class _GameScreenState extends State<GameScreen> {
       setState(() => _isLoading = true);
 
       // Déterminer le rôle du joueur
-      final role = _gameService.getCurrentPlayerRole();
+      final role = widget.gameFacade.getCurrentPlayerRole();
       AppLogger.info('[GameScreen] Rôle du joueur: $role');
 
       // Récupérer les challenges en fonction du rôle
       if (role == 'drawer') {
-        await _gameService.refreshMyChallenges();
-        _challenges = _gameService.myChallenges;
+        await widget.gameFacade.refreshMyChallenges();
+        _challenges = widget.gameFacade.myChallenges;
       } else {
-        await _gameService.refreshChallengesToGuess();
-        _challenges = _gameService.challengesToGuess;
+        await widget.gameFacade.refreshChallengesToGuess();
+        _challenges = widget.gameFacade.challengesToGuess;
       }
 
       AppLogger.info('[GameScreen] ${_challenges.length} challenges chargés');
@@ -102,6 +106,7 @@ class _GameScreenState extends State<GameScreen> {
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => ResultsScreen(
+          gameFacade: widget.gameFacade,
           scoreTeam1: _redTeamScore,
           scoreTeam2: _blueTeamScore,
         ),
@@ -124,7 +129,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _applyScoreDelta(int delta) {
-    final currentPlayer = _gameService.currentPlayer;
+    final currentPlayer = widget.gameFacade.currentPlayer;
     if (currentPlayer == null) return;
 
     setState(() {
@@ -180,7 +185,7 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    final role = _gameService.getCurrentPlayerRole();
+    final role = widget.gameFacade.getCurrentPlayerRole();
     final currentChallenge = _challenges[_currentChallengeIndex];
 
     return Scaffold(
@@ -200,14 +205,14 @@ class _GameScreenState extends State<GameScreen> {
                 child: role == 'drawer'
                     ? _DrawerView(
                         challenge: currentChallenge,
-                        gameService: _gameService,
+                        gameFacade: widget.gameFacade,
                         onImageGenerated: () => setState(() {}),
                         onScoreDelta: _applyScoreDelta,
                         onChallengeComplete: _nextChallenge,
                       )
                     : _GuesserView(
                         challenge: currentChallenge,
-                        gameService: _gameService,
+                        gameFacade: widget.gameFacade,
                         onScoreDelta: _applyScoreDelta,
                         onChallengeComplete: _nextChallenge,
                       ),
@@ -256,14 +261,14 @@ class _GameScreenState extends State<GameScreen> {
 /// Vue pour le dessinateur (drawer)
 class _DrawerView extends StatefulWidget {
   final models.Challenge challenge;
-  final GameService gameService;
+  final GameFacade gameFacade;
   final VoidCallback onImageGenerated;
   final Function(int) onScoreDelta;
   final VoidCallback onChallengeComplete;
 
   const _DrawerView({
     required this.challenge,
-    required this.gameService,
+    required this.gameFacade,
     required this.onImageGenerated,
     required this.onScoreDelta,
     required this.onChallengeComplete,
@@ -314,7 +319,7 @@ class _DrawerViewState extends State<_DrawerView> {
     });
 
     try {
-      final gameSession = widget.gameService.currentGameSession;
+      final gameSession = widget.gameFacade.currentGameSession;
       if (gameSession == null) {
         throw Exception('Aucune session de jeu active');
       }
@@ -540,13 +545,13 @@ class _DrawerViewState extends State<_DrawerView> {
 /// Vue pour le devineur (guesser)
 class _GuesserView extends StatefulWidget {
   final models.Challenge challenge;
-  final GameService gameService;
+  final GameFacade gameFacade;
   final Function(int) onScoreDelta;
   final VoidCallback onChallengeComplete;
 
   const _GuesserView({
     required this.challenge,
-    required this.gameService,
+    required this.gameFacade,
     required this.onScoreDelta,
     required this.onChallengeComplete,
   });
@@ -598,7 +603,8 @@ class _GuesserViewState extends State<_GuesserView> {
       final isCorrect = _checkAnswer(guess);
 
       // Envoyer la réponse à l'API
-      await widget.gameService.answerChallenge(
+      await widget.gameFacade.answerChallenge(
+        widget.gameFacade.currentGameSession!.id,
         widget.challenge.id,
         guess,
         isCorrect,
