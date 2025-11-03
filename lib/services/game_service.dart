@@ -4,6 +4,7 @@ import '../models/game_session.dart';
 import '../models/challenge.dart';
 import 'api_service.dart';
 import '../utils/logger.dart';
+import '../utils/role_assignment.dart';
 
 /// Service de gestion de l'état du jeu
 ///
@@ -325,12 +326,56 @@ class GameService {
     }
 
     try {
+      AppLogger.info('[GameService] Démarrage de la session ${_currentGameSession!.id}');
+
+      // Étape 1: Appeler le backend pour démarrer la session
       await _apiService.startGameSession(_currentGameSession!.id);
+
+      // Étape 2: Rafraîchir la session pour récupérer les rôles du backend
+      AppLogger.info('[GameService] Rafraîchissement après démarrage pour récupérer les rôles');
+      await refreshGameSession(_currentGameSession!.id);
+
+      // Étape 3: Vérifier si les rôles ont été assignés par le backend
+      if (_currentGameSession != null) {
+        final allHaveRoles = RoleAssignment.allPlayersHaveRoles(_currentGameSession!);
+
+        if (!allHaveRoles) {
+          AppLogger.warning('[GameService] Le backend n\'a pas assigné les rôles, attribution locale');
+
+          // Assigner les rôles localement
+          final sessionWithRoles = RoleAssignment.assignInitialRoles(_currentGameSession!);
+
+          // Mettre à jour la session locale
+          _currentGameSession = sessionWithRoles;
+          _gameSessionController.add(_currentGameSession);
+
+          AppLogger.success('[GameService] Rôles assignés localement avec succès');
+        } else {
+          AppLogger.success('[GameService] Rôles déjà assignés par le backend');
+        }
+
+        // Vérifier que les rôles sont valides
+        final rolesValid = RoleAssignment.areRolesValid(_currentGameSession!);
+        if (!rolesValid) {
+          AppLogger.error('[GameService] Les rôles ne sont pas valides !', null);
+          throw Exception('Les rôles ne sont pas correctement assignés');
+        }
+
+        // Log de l'état final
+        AppLogger.info('[GameService] État final des joueurs:');
+        for (final player in _currentGameSession!.players) {
+          AppLogger.info('[GameService]   - ${player.name}: ${player.color} team, ${player.role}');
+        }
+      }
+
+      // Étape 4: Mettre à jour le statut
       _currentStatus = 'challenge';
-_statusController.add(_currentStatus);
-    // Tenter transition auto
-    _checkTransitions();
+      _statusController.add(_currentStatus);
+
+      // Tenter transition auto
+      _checkTransitions();
     } catch (e) {
+      AppLogger.error('[GameService] Erreur lors du démarrage de la session', e);
       throw Exception('Erreur lors du démarrage de la session: $e');
     }
   }
@@ -610,12 +655,24 @@ _statusController.add(_currentStatus);
     }
 
     try {
-      // Notifier le backend de l'inversion des rôles
-      // Note: Ceci peut être géré automatiquement par le backend
-      await refreshGameSession(_currentGameSession!.id);
+      AppLogger.info('[GameService] Inversion des rôles de tous les joueurs');
+
+      // Inverser les rôles localement
+      final sessionWithSwitchedRoles = RoleAssignment.switchAllRoles(_currentGameSession!);
+
+      // Mettre à jour la session locale
+      _currentGameSession = sessionWithSwitchedRoles;
+      _gameSessionController.add(_currentGameSession);
+
+      // Log de l'état après inversion
+      AppLogger.info('[GameService] Rôles après inversion:');
+      for (final player in _currentGameSession!.players) {
+        AppLogger.info('[GameService]   - ${player.name}: ${player.color} team, ${player.role}');
+      }
 
       AppLogger.success('[GameService] Rôles inversés avec succès');
     } catch (e) {
+      AppLogger.error('[GameService] Erreur lors de l\'inversion des rôles', e);
       throw Exception('Erreur lors de l\'inversion des rôles: $e');
     }
   }
