@@ -273,8 +273,7 @@ class GameFacade {
 
   /// Récupère les challenges à deviner
   Future<List<Challenge>> getMyChallengesToGuess(String gameSessionId) async {
-    // TODO: Add method to ChallengeManager
-    return await _apiService.getMyChallengesToGuess(gameSessionId);
+    return await challenge.getChallengesToGuess(gameSessionId);
   }
 
   /// Rafraîchit les challenges créés par le joueur
@@ -294,7 +293,7 @@ class GameFacade {
     if (_currentGameSession == null) return;
 
     try {
-      _challengesToGuess = await _apiService.getMyChallengesToGuess(_currentGameSession!.id);
+      _challengesToGuess = await challenge.getChallengesToGuess(_currentGameSession!.id);
       _challengesController.add(_challengesToGuess);
     } catch (e) {
       throw Exception('Erreur lors de l\'actualisation des challenges à deviner: $e');
@@ -302,12 +301,12 @@ class GameFacade {
   }
 
   /// Génère une image pour un challenge
+  /// Note: Utilise ApiService directement car c'est une intégration externe (StableDiffusion)
   Future<String> generateImageForChallenge(
     String gameSessionId,
     String challengeId,
     String prompt,
   ) async {
-    // TODO: Add method to ChallengeManager
     return await _apiService.generateImageForChallenge(gameSessionId, challengeId, prompt);
   }
 
@@ -318,8 +317,7 @@ class GameFacade {
     String answer,
     bool isResolved,
   ) async {
-    // TODO: Add method to ChallengeManager
-    await _apiService.answerChallenge(gameSessionId, challengeId, answer, isResolved);
+    await challenge.answerChallenge(gameSessionId, challengeId, answer, isResolved);
   }
 
   /// Liste tous les challenges d'une session
@@ -335,9 +333,9 @@ class GameFacade {
   }
 
   /// Inverse les rôles de tous les joueurs
+  /// Note: L'inversion des rôles est gérée côté backend lors de la résolution des challenges.
+  /// Cette méthode rafraîchit simplement la session pour obtenir les rôles mis à jour.
   Future<void> switchAllRoles() async {
-    // TODO: Implémenter l'inversion côté backend ou local
-    // Pour l'instant, juste rafraîchir
     if (_currentGameSession != null) {
       await refreshGameSession(_currentGameSession!.id);
     }
