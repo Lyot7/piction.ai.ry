@@ -38,16 +38,37 @@ class _GameScreenState extends State<GameScreen> {
   int _redTeamScore = 100;
   int _blueTeamScore = 100;
 
+  // Stream subscription pour écouter les changements de statut
+  StreamSubscription<String>? _statusSubscription;
+  bool _hasNavigatedToResults = false;
+
   @override
   void initState() {
     super.initState();
+    _listenToStatusChanges();
     _initializeGame();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _statusSubscription?.cancel();
     super.dispose();
+  }
+
+  void _listenToStatusChanges() {
+    _statusSubscription = widget.gameFacade.statusStream.listen((status) {
+      if (!mounted || _hasNavigatedToResults) return;
+
+      AppLogger.info('[GameScreen] Changement de statut: $status');
+
+      // Navigation automatique vers l'écran de résultats quand le statut passe à 'finished'
+      if (status == 'finished') {
+        _hasNavigatedToResults = true;
+        _timer?.cancel();
+        _endGame();
+      }
+    });
   }
 
   Future<void> _initializeGame() async {
@@ -102,6 +123,13 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _endGame() {
+    // Éviter les doubles navigations
+    if (_hasNavigatedToResults) return;
+    _hasNavigatedToResults = true;
+
+    AppLogger.info('[GameScreen] Fin de partie - Navigation vers les résultats');
+    _timer?.cancel();
+
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
