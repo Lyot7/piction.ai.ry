@@ -51,8 +51,23 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       _articles2.add('Une'); // Valeur par défaut
     }
 
+    // Ajouter des listeners pour mettre à jour le bouton en temps réel
+    _addTextFieldListeners();
+
     // Écouter les changements de statut
     _listenToStatusChanges();
+  }
+
+  void _addTextFieldListeners() {
+    // Ajouter un listener sur chaque TextEditingController
+    for (final controllerGroup in _controllers) {
+      for (final controller in controllerGroup) {
+        controller.addListener(() {
+          // Mettre à jour l'UI pour refléter l'état du bouton
+          setState(() {});
+        });
+      }
+    }
   }
 
   @override
