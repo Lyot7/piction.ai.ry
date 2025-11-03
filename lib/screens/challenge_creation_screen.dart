@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
+import '../utils/logger.dart';
 import 'game_screen.dart';
 
 /// Écran de création des challenges avant le début du jeu
@@ -19,7 +21,7 @@ class ChallengeCreationScreen extends StatefulWidget {
 
 class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   final _formKey = GlobalKey<FormState>();
-  
+
   // Contrôleurs pour les champs de texte
   final List<List<TextEditingController>> _controllers = [];
 
@@ -27,6 +29,10 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   final List<String> _articles1 = []; // "Un" ou "Une" pour input1
   final List<String> _prepositions = []; // "Sur" ou "Dans"
   final List<String> _articles2 = []; // "Un" ou "Une" pour input2
+
+  // Stream subscription pour écouter les changements de statut
+  StreamSubscription<String>? _statusSubscription;
+  bool _isWaitingForGameStart = false;
 
   @override
   void initState() {
@@ -44,6 +50,9 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       _prepositions.add('Sur'); // Valeur par défaut
       _articles2.add('Une'); // Valeur par défaut
     }
+
+    // Écouter les changements de statut
+    _listenToStatusChanges();
   }
 
   @override
@@ -54,7 +63,45 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         controller.dispose();
       }
     }
+    _statusSubscription?.cancel();
     super.dispose();
+  }
+
+  void _listenToStatusChanges() {
+    _statusSubscription = widget.gameFacade.statusStream.listen((status) {
+      if (!mounted || !_isWaitingForGameStart) return;
+
+      AppLogger.info('[ChallengeCreationScreen] Changement de statut: $status');
+
+      // Navigation automatique vers l'écran de jeu quand le statut passe à 'playing'
+      if (status == 'playing') {
+        _navigateToGameScreen();
+      }
+    });
+  }
+
+  void _navigateToGameScreen() {
+    if (!mounted) return;
+
+    AppLogger.info('[ChallengeCreationScreen] Navigation vers l\'écran de jeu');
+
+    // Fermer le dialog si ouvert
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => GameScreen(
+          gameFacade: widget.gameFacade,
+        ),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
   }
 
   @override
@@ -354,30 +401,19 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           );
         }
 
-        // Attendre que tous les joueurs aient envoyé leurs challenges
-        // Le backend passe de "challenge" à "playing" automatiquement
-        if (mounted) {
-          _showWaitingDialog();
-          await _waitForGameToStart(gameService);
-        }
+        AppLogger.success('[ChallengeCreationScreen] 3 challenges envoyés avec succès');
 
-        // Navigation vers l'écran de jeu
+        // Afficher le dialog d'attente et activer l'écoute du stream
         if (mounted) {
-          Navigator.pop(context); // Fermer le dialog
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => GameScreen(
-                gameFacade: widget.gameFacade,
-              ),
-              transitionDuration: const Duration(milliseconds: 150),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
-            ),
-          );
+          setState(() {
+            _isWaitingForGameStart = true;
+          });
+          _showWaitingDialog();
+          // La navigation vers l'écran de jeu se fera automatiquement
+          // via le stream de statut quand status = 'playing'
         }
       } catch (e) {
+        AppLogger.error('[ChallengeCreationScreen] Erreur lors de l\'envoi des challenges', e);
         if (mounted) {
           // Fermer le dialog si ouvert
           Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst || !route.willHandlePopInternally);
@@ -420,33 +456,5 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _waitForGameToStart(GameFacade gameFacade) async {
-    // Polling toutes les 2 secondes pour vérifier si le status est "playing"
-    const maxWaitTime = Duration(minutes: 5);
-    const pollInterval = Duration(seconds: 2);
-    final startTime = DateTime.now();
-
-    while (DateTime.now().difference(startTime) < maxWaitTime) {
-      try {
-        await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
-        final status = gameFacade.currentStatus;
-
-        if (status == 'playing') {
-          // Le jeu a commencé !
-          return;
-        }
-
-        // Attendre avant le prochain poll
-        await Future.delayed(pollInterval);
-      } catch (e) {
-        // Ignorer les erreurs transitoires, continuer le polling
-        await Future.delayed(pollInterval);
-      }
-    }
-
-    // Timeout après 5 minutes
-    throw Exception('Timeout: Le jeu n\'a pas démarré après 5 minutes');
   }
 }
