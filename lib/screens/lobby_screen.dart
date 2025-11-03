@@ -9,6 +9,7 @@ import '../models/player.dart';
 import '../services/game_facade.dart';
 import '../services/deep_link_service.dart';
 import '../utils/logger.dart';
+import 'challenge_creation_screen.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
@@ -34,6 +35,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
   bool _isChangingTeam = false;
   DateTime? _lastTeamChangeAttempt;
 
+  // Stream subscriptions pour nettoyage
+  StreamSubscription? _gameSessionSubscription;
+  StreamSubscription? _statusSubscription;
+
   // Tracking des joueurs en cours de changement d'équipe
   // Map: playerId -> targetTeamColor
   final Map<String, String> _playersTransitioning = {};
@@ -50,6 +55,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     _cachedJoinLink = _generateJoinLink();
 
     _listenToGameSessionUpdates();
+    _listenToStatusChanges();
     _startAutoRefresh();
     // Faire un refresh immédiat pour afficher l'état actuel
     Future.microtask(() => _refreshSessionOptimized());
@@ -58,17 +64,49 @@ class _LobbyScreenState extends State<LobbyScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _gameSessionSubscription?.cancel();
+    _statusSubscription?.cancel();
     super.dispose();
   }
 
   void _listenToGameSessionUpdates() {
-    widget.gameFacade.gameSessionStream.listen((gameSession) {
+    _gameSessionSubscription = widget.gameFacade.gameSessionStream.listen((gameSession) {
       if (gameSession != null && mounted) {
         setState(() {
           _gameSession = gameSession;
         });
       }
     });
+  }
+
+  void _listenToStatusChanges() {
+    _statusSubscription = widget.gameFacade.statusStream.listen((status) {
+      if (!mounted) return;
+
+      AppLogger.info('[LobbyScreen] Changement de statut: $status');
+
+      // Navigation automatique vers l'écran de création de challenges
+      if (status == 'challenge') {
+        _refreshTimer?.cancel(); // Arrêter le polling
+        _navigateToChallengeCreation();
+      }
+    });
+  }
+
+  void _navigateToChallengeCreation() {
+    AppLogger.info('[LobbyScreen] Navigation vers l\'écran de création de challenges');
+
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => ChallengeCreationScreen(
+          gameFacade: widget.gameFacade,
+        ),
+        transitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
   }
 
   bool get _isHost {
@@ -866,9 +904,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   void _startAutoRefresh() {
-    // ⚡ OPTIMISATION: Passer de 500ms → 1000ms pour réduire la charge
-    // Avec 4 clients: 8 req/s → 4 req/s (réduction de 50%)
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
+    // ⚡ OPTIMISATION: Réduire drastiquement le polling grâce au stream de statut
+    // Le polling sert maintenant uniquement de backup pour la liste des joueurs
+    // 1000ms → 3000ms: 4 req/s → 1.3 req/s par client (réduction de 66%)
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 3000), (timer) {
       if (mounted) {
         _refreshSessionOptimized();
       }
