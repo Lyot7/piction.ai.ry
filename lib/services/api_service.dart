@@ -388,12 +388,12 @@ class ApiService {
       'POST',
       '/game_sessions/$gameSessionId/challenges',
       body: {
-        'first_word': article1,      // "Un" ou "Une"
-        'second_word': input1,        // Le mot à deviner (ex: "Chat")
-        'third_word': preposition,    // "Sur" ou "Dans"
-        'fourth_word': article2,      // "Un" ou "Une"
-        'fifth_word': input2,         // Le lieu (ex: "Table")
-        'forbidden_words': forbiddenWords, // Les 3 mots interdits
+        'first_word': article1.toLowerCase(),      // "un" ou "une"
+        'second_word': input1,                      // Le mot à deviner (ex: "Chat")
+        'third_word': preposition.toLowerCase(),    // "sur" ou "dans"
+        'fourth_word': article2.toLowerCase(),      // "un" ou "une"
+        'fifth_word': input2,                       // Le lieu (ex: "Table")
+        'forbidden_words': forbiddenWords,          // Les 3 mots interdits
       },
     );
 
