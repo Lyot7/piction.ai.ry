@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piction_ai_ry/services/deep_link_service.dart';
 import '../helpers/mock_api_service.dart';
@@ -20,14 +21,14 @@ void main() {
 
     test('SCENARIO: Generate room link for QR code', () {
       // ===== PHASE 1: Créer une session =====
-      print('\n📝 PHASE 1: Création de room et génération de lien');
+      debugPrint('\n📝 PHASE 1: Création de room et génération de lien');
 
       const roomId = 'ABCD1234';
 
       // ===== ACTION: Générer le lien de room =====
       final roomLink = deepLinkService.generateRoomLink(roomId);
 
-      print('✅ Lien de room généré: $roomLink');
+      debugPrint('✅ Lien de room généré: $roomLink');
 
       // ===== VÉRIFICATION: Format du lien =====
       expect(roomLink, isNotEmpty);
@@ -36,25 +37,25 @@ void main() {
       expect(roomLink, contains(roomId),
         reason: 'Link should contain room ID');
 
-      print('✅ Format de lien valide');
+      debugPrint('✅ Format de lien valide');
 
       // ===== VÉRIFICATION: Le lien peut être scanné/partagé =====
       // Simuler un scan de QR code qui retourne ce lien
       final scannedLink = roomLink;
       expect(scannedLink, equals(roomLink));
-      print('✅ Lien prêt pour QR code ou partage');
+      debugPrint('✅ Lien prêt pour QR code ou partage');
 
-      print('\n✅ TEST PASSED: Room link generation');
+      debugPrint('\n✅ TEST PASSED: Room link generation');
     });
 
     test('SCENARIO: Parse room ID from deep link', () {
-      print('\n📝 Test de parsing de deep link');
+      debugPrint('\n📝 Test de parsing de deep link');
 
       const roomId = 'XYZ9876';
 
       // Générer le lien
       final link = deepLinkService.generateRoomLink(roomId);
-      print('✅ Lien généré: $link');
+      debugPrint('✅ Lien généré: $link');
 
       // ===== ACTION: Parser le lien pour extraire le room ID =====
       final parsedRoomId = deepLinkService.parseRoomIdFromLink(link);
@@ -62,9 +63,9 @@ void main() {
       // ===== VÉRIFICATION: Room ID correctement extrait =====
       expect(parsedRoomId, equals(roomId),
         reason: 'Should extract exact room ID from link');
-      print('✅ Room ID extrait: $parsedRoomId');
+      debugPrint('✅ Room ID extrait: $parsedRoomId');
 
-      print('\n✅ TEST PASSED: Deep link parsing');
+      debugPrint('\n✅ TEST PASSED: Deep link parsing');
     });
 
     test('SCENARIO: Complete QR code join flow', () async {
@@ -75,24 +76,24 @@ void main() {
       // 4. Guest est automatiquement redirigé vers le lobby
       // 5. Guest rejoint une équipe
 
-      print('\n📝 WORKFLOW COMPLET: Join via QR Code');
+      debugPrint('\n📝 WORKFLOW COMPLET: Join via QR Code');
 
       // ===== PHASE 1: HOST - Créer la room =====
-      print('\n📱 HOST:');
+      debugPrint('\n📱 HOST:');
 
       final hostSession = await mockApi.createGameSession();
       final hostPlayer = await mockApi.joinGameSession(hostSession.id, 'red');
 
-      print('   ✅ Room créée par ${hostPlayer.name}');
-      print('   ✅ Room ID: ${hostSession.id}');
+      debugPrint('   ✅ Room créée par ${hostPlayer.name}');
+      debugPrint('   ✅ Room ID: ${hostSession.id}');
 
       // ===== PHASE 2: HOST - Générer le lien pour QR code =====
       final qrCodeLink = deepLinkService.generateRoomLink(hostSession.id);
-      print('   ✅ Lien QR généré: $qrCodeLink');
+      debugPrint('   ✅ Lien QR généré: $qrCodeLink');
 
       // ===== PHASE 3: GUEST - Scanner le QR code =====
-      print('\n📱 GUEST:');
-      print('   🔍 Scan du QR code...');
+      debugPrint('\n📱 GUEST:');
+      debugPrint('   🔍 Scan du QR code...');
 
       final scannedLink = qrCodeLink; // Simule le scan
       final roomIdFromQR = deepLinkService.parseRoomIdFromLink(scannedLink);
@@ -100,11 +101,11 @@ void main() {
       expect(roomIdFromQR, isNotNull, reason: 'Should extract room ID from QR');
       expect(roomIdFromQR, equals(hostSession.id),
         reason: 'Should extract correct room ID from scanned QR');
-      print('   ✅ Room ID extrait du QR: $roomIdFromQR');
+      debugPrint('   ✅ Room ID extrait du QR: $roomIdFromQR');
 
       // ===== PHASE 4: GUEST - Rejoindre automatiquement la room =====
       final guestPlayer = await mockApi.joinGameSession(roomIdFromQR!, 'blue');
-      print('   ✅ ${guestPlayer.name} a rejoint la room');
+      debugPrint('   ✅ ${guestPlayer.name} a rejoint la room');
 
       // ===== VÉRIFICATION: Les 2 joueurs sont dans la même session =====
       final updatedSession = await mockApi.refreshGameSession(hostSession.id);
@@ -115,35 +116,35 @@ void main() {
       expect(updatedSession.players.any((p) => p.id == guestPlayer.id), isTrue,
         reason: 'Guest should be in session');
 
-      print('\n📊 État final de la session:');
-      print('   - Total joueurs: ${updatedSession.players.length}');
-      print('   - Host: ${hostPlayer.name} (${hostPlayer.color} team)');
-      print('   - Guest: ${guestPlayer.name} (${guestPlayer.color} team)');
+      debugPrint('\n📊 État final de la session:');
+      debugPrint('   - Total joueurs: ${updatedSession.players.length}');
+      debugPrint('   - Host: ${hostPlayer.name} (${hostPlayer.color} team)');
+      debugPrint('   - Guest: ${guestPlayer.name} (${guestPlayer.color} team)');
 
-      print('\n✅ TEST PASSED: Complete QR code join flow');
+      debugPrint('\n✅ TEST PASSED: Complete QR code join flow');
     });
 
     test('SCENARIO: Multiple guests join via QR code', () async {
-      print('\n📝 WORKFLOW: Multiple guests via QR code');
+      debugPrint('\n📝 WORKFLOW: Multiple guests via QR code');
 
       // ===== SETUP: Host crée la room =====
       final hostSession = await mockApi.createGameSession();
       final hostPlayer = await mockApi.joinGameSession(hostSession.id, 'red');
 
-      print('✅ Host ${hostPlayer.name} a créé la room ${hostSession.id}');
-      print('✅ QR code généré et partagé');
+      debugPrint('✅ Host ${hostPlayer.name} a créé la room ${hostSession.id}');
+      debugPrint('✅ QR code généré et partagé');
 
       // ===== ACTION: 3 guests scannent le QR code =====
-      print('\n📱 3 guests scannent le QR code:');
+      debugPrint('\n📱 3 guests scannent le QR code:');
 
       final guest1 = await mockApi.joinGameSession(hostSession.id, 'red');
-      print('   ✅ Guest 1: ${guest1.name} (${guest1.color} team)');
+      debugPrint('   ✅ Guest 1: ${guest1.name} (${guest1.color} team)');
 
       final guest2 = await mockApi.joinGameSession(hostSession.id, 'blue');
-      print('   ✅ Guest 2: ${guest2.name} (${guest2.color} team)');
+      debugPrint('   ✅ Guest 2: ${guest2.name} (${guest2.color} team)');
 
       final guest3 = await mockApi.joinGameSession(hostSession.id, 'blue');
-      print('   ✅ Guest 3: ${guest3.name} (${guest3.color} team)');
+      debugPrint('   ✅ Guest 3: ${guest3.name} (${guest3.color} team)');
 
       // ===== VÉRIFICATION: Tous sont dans la session =====
       final fullSession = await mockApi.refreshGameSession(hostSession.id);
@@ -151,17 +152,17 @@ void main() {
       expect(fullSession.players.length, equals(4));
       expect(fullSession.isReadyToStart, isTrue);
 
-      print('\n📊 Session complète:');
-      print('   - Total joueurs: ${fullSession.players.length}');
-      print('   - Red team: ${fullSession.getTeamPlayers('red').length}');
-      print('   - Blue team: ${fullSession.getTeamPlayers('blue').length}');
-      print('   - Prête à démarrer: ${fullSession.isReadyToStart ? 'OUI' : 'NON'}');
+      debugPrint('\n📊 Session complète:');
+      debugPrint('   - Total joueurs: ${fullSession.players.length}');
+      debugPrint('   - Red team: ${fullSession.getTeamPlayers('red').length}');
+      debugPrint('   - Blue team: ${fullSession.getTeamPlayers('blue').length}');
+      debugPrint('   - Prête à démarrer: ${fullSession.isReadyToStart ? 'OUI' : 'NON'}');
 
-      print('\n✅ TEST PASSED: Multiple QR code joins');
+      debugPrint('\n✅ TEST PASSED: Multiple QR code joins');
     });
 
     test('SCENARIO: Invalid deep link is rejected', () {
-      print('\n📝 Test de liens invalides');
+      debugPrint('\n📝 Test de liens invalides');
 
       // Liens malformés
       final invalidLinks = [
@@ -174,7 +175,7 @@ void main() {
       ];
 
       for (final invalidLink in invalidLinks) {
-        print('\n   🔍 Test: "$invalidLink"');
+        debugPrint('\n   🔍 Test: "$invalidLink"');
 
         final roomId = deepLinkService.parseRoomIdFromLink(invalidLink);
 
@@ -182,56 +183,56 @@ void main() {
         expect(roomId, anyOf(isNull, isEmpty),
           reason: 'Invalid link should not extract room ID');
 
-        print('   ✅ Correctement rejeté');
+        debugPrint('   ✅ Correctement rejeté');
       }
 
-      print('\n✅ TEST PASSED: Invalid link handling');
+      debugPrint('\n✅ TEST PASSED: Invalid link handling');
     });
 
     test('SCENARIO: Manual room code entry (alternative to QR)', () async {
       // Test du flow alternatif: entrer le code manuellement
-      print('\n📝 WORKFLOW: Manual room code entry');
+      debugPrint('\n📝 WORKFLOW: Manual room code entry');
 
       // ===== SETUP: Host crée la room =====
       final hostSession = await mockApi.createGameSession();
       await mockApi.joinGameSession(hostSession.id, 'red');
 
-      print('✅ Room créée avec code: ${hostSession.id}');
+      debugPrint('✅ Room créée avec code: ${hostSession.id}');
 
       // ===== PHASE 1: Guest entre le code manuellement =====
-      print('\n📱 GUEST entre le code manuellement:');
+      debugPrint('\n📱 GUEST entre le code manuellement:');
       final manualCode = hostSession.id;
-      print('   ✏️ Code entré: $manualCode');
+      debugPrint('   ✏️ Code entré: $manualCode');
 
       // ===== VÉRIFICATION: Le code est valide (session existe) =====
       final sessionCheck = await mockApi.getGameSession(manualCode);
       expect(sessionCheck.id, equals(manualCode));
-      print('   ✅ Code valide, session trouvée');
+      debugPrint('   ✅ Code valide, session trouvée');
 
       // ===== PHASE 2: Guest rejoint avec le code =====
       final guestPlayer = await mockApi.joinGameSession(manualCode, 'blue');
-      print('   ✅ ${guestPlayer.name} a rejoint avec le code');
+      debugPrint('   ✅ ${guestPlayer.name} a rejoint avec le code');
 
       // ===== VÉRIFICATION: Guest est dans la session =====
       final updatedSession = await mockApi.refreshGameSession(hostSession.id);
       expect(updatedSession.players.length, equals(2));
       expect(updatedSession.players.any((p) => p.id == guestPlayer.id), isTrue);
 
-      print('\n✅ TEST PASSED: Manual code entry flow');
+      debugPrint('\n✅ TEST PASSED: Manual code entry flow');
     });
 
     test('SCENARIO: QR code link format consistency', () {
-      print('\n📝 Test de cohérence du format de liens');
+      debugPrint('\n📝 Test de cohérence du format de liens');
 
       // Générer plusieurs liens pour différentes rooms
       final roomIds = ['ROOM1', 'ABCD', 'XYZ123', '12345'];
       final links = <String>[];
 
-      print('\n🔗 Génération de liens:');
+      debugPrint('\n🔗 Génération de liens:');
       for (final roomId in roomIds) {
         final link = deepLinkService.generateRoomLink(roomId);
         links.add(link);
-        print('   $roomId → $link');
+        debugPrint('   $roomId → $link');
 
         // Vérifier que le parsing fonctionne
         final parsedId = deepLinkService.parseRoomIdFromLink(link);
@@ -244,12 +245,12 @@ void main() {
       expect(allHaveSameScheme, isTrue,
         reason: 'All links should use same scheme');
 
-      print('\n✅ Format cohérent pour tous les liens');
-      print('✅ TEST PASSED: Link format consistency');
+      debugPrint('\n✅ Format cohérent pour tous les liens');
+      debugPrint('✅ TEST PASSED: Link format consistency');
     });
 
     test('SCENARIO: Deep link with extra parameters', () {
-      print('\n📝 Test de deep link avec paramètres additionnels');
+      debugPrint('\n📝 Test de deep link avec paramètres additionnels');
 
       const roomId = 'TEST123';
       final baseLink = deepLinkService.generateRoomLink(roomId);
@@ -258,7 +259,7 @@ void main() {
       // (ex: venant d'un partage social, analytics, etc.)
       final linkWithParams = '$baseLink?utm_source=share&ref=qr';
 
-      print('✅ Lien avec paramètres: $linkWithParams');
+      debugPrint('✅ Lien avec paramètres: $linkWithParams');
 
       // ===== VÉRIFICATION: Le parsing fonctionne malgré les paramètres =====
       final parsedRoomId = deepLinkService.parseRoomIdFromLink(linkWithParams);
@@ -266,8 +267,8 @@ void main() {
       expect(parsedRoomId, equals(roomId),
         reason: 'Should extract room ID even with extra params');
 
-      print('✅ Room ID extrait malgré paramètres: $parsedRoomId');
-      print('✅ TEST PASSED: Deep link with parameters');
+      debugPrint('✅ Room ID extrait malgré paramètres: $parsedRoomId');
+      debugPrint('✅ TEST PASSED: Deep link with parameters');
     });
   });
 
@@ -281,7 +282,7 @@ void main() {
     });
 
     test('SCENARIO: Joining full room via QR code shows error', () async {
-      print('\n📝 Tentative de join d\'une room pleine via QR');
+      debugPrint('\n📝 Tentative de join d\'une room pleine via QR');
 
       // ===== SETUP: Room complète (4 joueurs) =====
       final session = await mockApi.createGameSession();
@@ -292,14 +293,14 @@ void main() {
 
       final fullSession = await mockApi.refreshGameSession(session.id);
       expect(fullSession.players.length, equals(4));
-      print('✅ Room complète (4 joueurs)');
+      debugPrint('✅ Room complète (4 joueurs)');
 
       // ===== ACTION: Guest scanne QR code =====
       final qrLink = deepLinkService.generateRoomLink(session.id);
       final roomId = deepLinkService.parseRoomIdFromLink(qrLink);
       expect(roomId, isNotNull);
 
-      print('📱 Guest scanne le QR code...');
+      debugPrint('📱 Guest scanne le QR code...');
 
       // ===== VÉRIFICATION: Tentative de join échoue =====
       // Tenter de rejoindre l'équipe rouge (pleine)
@@ -308,7 +309,7 @@ void main() {
         throwsException,
       );
 
-      print('✅ Erreur correctement levée (équipe rouge pleine)');
+      debugPrint('✅ Erreur correctement levée (équipe rouge pleine)');
 
       // Tenter de rejoindre l'équipe bleue (pleine aussi)
       expect(
@@ -316,23 +317,23 @@ void main() {
         throwsException,
       );
 
-      print('✅ Erreur correctement levée (équipe bleue pleine)');
-      print('✅ TEST PASSED: Full room rejection');
+      debugPrint('✅ Erreur correctement levée (équipe bleue pleine)');
+      debugPrint('✅ TEST PASSED: Full room rejection');
     });
 
     test('SCENARIO: Scanning QR code of non-existent room', () {
-      print('\n📝 QR code d\'une room inexistante');
+      debugPrint('\n📝 QR code d\'une room inexistante');
 
       const fakeRoomId = 'NONEXISTENT';
       final qrLink = deepLinkService.generateRoomLink(fakeRoomId);
 
-      print('✅ QR code généré pour room inexistante: $qrLink');
+      debugPrint('✅ QR code généré pour room inexistante: $qrLink');
 
       // Le parsing fonctionne (lien valide)
       final roomId = deepLinkService.parseRoomIdFromLink(qrLink);
       expect(roomId, isNotNull);
       expect(roomId, equals(fakeRoomId));
-      print('✅ Parsing réussi: $roomId');
+      debugPrint('✅ Parsing réussi: $roomId');
 
       // Mais la tentative de join échouera (session inexistante)
       expect(
@@ -340,38 +341,38 @@ void main() {
         throwsException,
       );
 
-      print('✅ Join correctement échoué (room n\'existe pas)');
-      print('✅ TEST PASSED: Non-existent room handling');
+      debugPrint('✅ Join correctement échoué (room n\'existe pas)');
+      debugPrint('✅ TEST PASSED: Non-existent room handling');
     });
 
     test('SCENARIO: Re-joining room via QR code after leaving', () async {
-      print('\n📝 Re-join via QR après avoir quitté');
+      debugPrint('\n📝 Re-join via QR après avoir quitté');
 
       // ===== SETUP: Player rejoint puis quitte =====
       final session = await mockApi.createGameSession();
       final player = await mockApi.joinGameSession(session.id, 'red');
 
-      print('✅ ${player.name} a rejoint la room');
+      debugPrint('✅ ${player.name} a rejoint la room');
 
       await mockApi.leaveGameSession(session.id, player.id);
-      print('✅ ${player.name} a quitté la room');
+      debugPrint('✅ ${player.name} a quitté la room');
 
       // ===== ACTION: Player re-scanne le QR code =====
       final qrLink = deepLinkService.generateRoomLink(session.id);
       final roomId = deepLinkService.parseRoomIdFromLink(qrLink);
       expect(roomId, isNotNull);
 
-      print('📱 ${player.name} re-scanne le QR code...');
+      debugPrint('📱 ${player.name} re-scanne le QR code...');
 
       // ===== VÉRIFICATION: Re-join fonctionne =====
       final rejoinedPlayer = await mockApi.joinGameSession(roomId!, 'blue');
       expect(rejoinedPlayer, isNotNull);
-      print('✅ Re-join réussi (nouvelle équipe: ${rejoinedPlayer.color})');
+      debugPrint('✅ Re-join réussi (nouvelle équipe: ${rejoinedPlayer.color})');
 
       final updatedSession = await mockApi.refreshGameSession(session.id);
       expect(updatedSession.players.any((p) => p.id == rejoinedPlayer.id), isTrue);
 
-      print('✅ TEST PASSED: Re-join after leaving');
+      debugPrint('✅ TEST PASSED: Re-join after leaving');
     });
   });
 }
