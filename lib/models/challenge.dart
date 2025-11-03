@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Modèle pour un challenge
 /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]"
 class Challenge {
@@ -44,17 +46,40 @@ class Challenge {
   });
 
   factory Challenge.fromJson(Map<String, dynamic> json) {
+    // Parser forbidden_words qui peut être String, List ou null
+    List<String> parseForbiddenWords(dynamic forbiddenWordsField) {
+      if (forbiddenWordsField == null) return [];
+
+      if (forbiddenWordsField is List) {
+        return forbiddenWordsField.map((word) => word.toString()).toList();
+      }
+
+      if (forbiddenWordsField is String) {
+        // Si c'est un JSON string, essayer de le parser
+        try {
+          final decoded = jsonDecode(forbiddenWordsField);
+          if (decoded is List) {
+            return decoded.map((word) => word.toString()).toList();
+          }
+        } catch (_) {
+          // Si pas JSON, retourner la string comme un seul élément
+          return [forbiddenWordsField];
+        }
+      }
+
+      return [];
+    }
+
     return Challenge(
       id: (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString(),
-      gameSessionId: (json['gameSessionId'] ?? '').toString(),
-      article1: json['article1'] ?? json['article_1'] ?? 'Un',
-      input1: json['input1'] ?? json['input_1'] ?? json['first_word'] ?? '',
-      preposition: json['preposition'] ?? 'Sur',
-      article2: json['article2'] ?? json['article_2'] ?? 'Une',
-      input2: json['input2'] ?? json['input_2'] ?? json['second_word'] ?? '',
-      forbiddenWords: (json['forbidden_words'] as List<dynamic>?)
-          ?.map((word) => word.toString())
-          .toList() ?? [],
+      gameSessionId: (json['gameSessionId'] ?? json['game_session_id'] ?? '').toString(),
+      // Backend renvoie: first_word, second_word, third_word, fourth_word, fifth_word
+      article1: json['first_word'] ?? json['article1'] ?? json['article_1'] ?? 'Un',
+      input1: json['second_word'] ?? json['input1'] ?? json['input_1'] ?? '',
+      preposition: json['third_word'] ?? json['preposition'] ?? 'Sur',
+      article2: json['fourth_word'] ?? json['article2'] ?? json['article_2'] ?? 'Une',
+      input2: json['fifth_word'] ?? json['input2'] ?? json['input_2'] ?? '',
+      forbiddenWords: parseForbiddenWords(json['forbidden_words']),
       prompt: json['prompt'],
       imageUrl: json['imageUrl'] ?? json['image_url'],
       answer: json['answer'],
@@ -62,11 +87,11 @@ class Challenge {
       drawerId: (json['drawerId'] ?? json['drawer_id'] ?? '').toString(),
       guesserId: (json['guesserId'] ?? json['guesser_id'] ?? '').toString(),
       currentPhase: json['currentPhase'] ?? json['current_phase'],
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'])
+      createdAt: json['createdAt'] != null || json['created_at'] != null
+          ? DateTime.tryParse(json['createdAt'] ?? json['created_at'])
           : null,
-      completedAt: json['completedAt'] != null
-          ? DateTime.tryParse(json['completedAt'])
+      completedAt: json['completedAt'] != null || json['completed_at'] != null
+          ? DateTime.tryParse(json['completedAt'] ?? json['completed_at'])
           : null,
     );
   }
