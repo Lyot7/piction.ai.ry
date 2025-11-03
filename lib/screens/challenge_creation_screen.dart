@@ -109,46 +109,93 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Création des Challenges'),
-        actions: [
-          TextButton.icon(
-            onPressed: _canSubmit() ? _submitChallenges : null,
-            icon: const Icon(Icons.send, color: Colors.white),
-            label: const Text(
-              'Valider',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
+        backgroundColor: AppTheme.primaryColor,
+        foregroundColor: Colors.white,
       ),
       body: SafeArea(
         child: Form(
           key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: AnimationLimiter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Instructions
-                  _buildInstructions(),
-                  const SizedBox(height: 24),
+          child: Column(
+            children: [
+              // Contenu scrollable
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: AnimationLimiter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Instructions
+                        _buildInstructions(),
+                        const SizedBox(height: 24),
 
-                  // Challenges (3 au lieu de 4)
-                  ...List.generate(
-                    3,
-                    (index) => AnimationConfiguration.staggeredList(
-                      position: index,
-                      duration: const Duration(milliseconds: 375),
-                      child: SlideAnimation(
-                        verticalOffset: 15.0,
-                        child: FadeInAnimation(
-                          duration: const Duration(milliseconds: 100),
-                          child: _buildChallengeCard(index),
+                        // Challenges (3 au lieu de 4)
+                        ...List.generate(
+                          3,
+                          (index) => AnimationConfiguration.staggeredList(
+                            position: index,
+                            duration: const Duration(milliseconds: 375),
+                            child: SlideAnimation(
+                              verticalOffset: 15.0,
+                              child: FadeInAnimation(
+                                duration: const Duration(milliseconds: 100),
+                                child: _buildChallengeCard(index),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 100), // Espace pour le bouton fixe
+                      ],
                     ),
                   ),
-                ],
+                ),
+              ),
+
+              // Bouton de validation fixe en bas
+              _buildSubmitButton(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    final canSubmit = _canSubmit();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton.icon(
+            onPressed: canSubmit ? _submitChallenges : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: canSubmit ? AppTheme.primaryColor : Colors.grey,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: canSubmit ? 4 : 0,
+            ),
+            icon: const Icon(Icons.check_circle, size: 28),
+            label: Text(
+              canSubmit ? 'Valider mes 3 challenges' : 'Remplissez tous les champs',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
@@ -253,82 +300,136 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Label pour l'objet
+        Text(
+          'Objet à deviner',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppTheme.primaryColor,
+          ),
+        ),
+        const SizedBox(height: 8),
+
         // Challenge principal - Première partie: "Un/Une [OBJET]"
         Row(
           children: [
             // Dropdown pour "Un" ou "Une"
-            DropdownButton<String>(
-              value: _articles1[index],
-              items: const [
-                DropdownMenuItem(value: 'Un', child: Text('Un')),
-                DropdownMenuItem(value: 'Une', child: Text('Une')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _articles1[index] = value!;
-                });
-              },
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.primaryColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButton<String>(
+                value: _articles1[index],
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 'Un', child: Text('Un')),
+                  DropdownMenuItem(value: 'Une', child: Text('Une')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _articles1[index] = value!;
+                  });
+                },
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: TextFormField(
                 controller: _controllers[index][0],
-                decoration: const InputDecoration(
-                  hintText: 'objet (ex: chat, livre, voiture)...',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: 'Ex: chat, livre, voiture',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
                 ),
-                validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+                validator: (value) => value?.isEmpty == true ? 'Ce champ est requis' : null,
+                textCapitalization: TextCapitalization.words,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
+
+        // Label pour le lieu
+        Text(
+          'Lieu / Position',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppTheme.primaryColor,
+          ),
+        ),
+        const SizedBox(height: 8),
 
         // Challenge principal - Deuxième partie: "Sur/Dans Un/Une [LIEU]"
         Row(
           children: [
             // Dropdown pour "Sur" ou "Dans"
-            DropdownButton<String>(
-              value: _prepositions[index],
-              items: const [
-                DropdownMenuItem(value: 'Sur', child: Text('Sur')),
-                DropdownMenuItem(value: 'Dans', child: Text('Dans')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _prepositions[index] = value!;
-                });
-              },
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.primaryColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButton<String>(
+                value: _prepositions[index],
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 'Sur', child: Text('Sur')),
+                  DropdownMenuItem(value: 'Dans', child: Text('Dans')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _prepositions[index] = value!;
+                  });
+                },
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             // Dropdown pour "Un" ou "Une"
-            DropdownButton<String>(
-              value: _articles2[index],
-              items: const [
-                DropdownMenuItem(value: 'Un', child: Text('Un')),
-                DropdownMenuItem(value: 'Une', child: Text('Une')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _articles2[index] = value!;
-                });
-              },
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.primaryColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButton<String>(
+                value: _articles2[index],
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 'Un', child: Text('Un')),
+                  DropdownMenuItem(value: 'Une', child: Text('Une')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _articles2[index] = value!;
+                  });
+                },
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: TextFormField(
                 controller: _controllers[index][1],
-                decoration: const InputDecoration(
-                  hintText: 'lieu (ex: table, maison, jardin)...',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: 'Ex: table, maison, jardin',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
                 ),
-                validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+                validator: (value) => value?.isEmpty == true ? 'Ce champ est requis' : null,
+                textCapitalization: TextCapitalization.words,
               ),
             ),
           ],
         ),
         const SizedBox(height: 24),
-        
+
         // Mots interdits
         Text(
           'Mots interdits',
@@ -338,30 +439,42 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        
-        Row(
+
+        // Mots interdits en colonne pour plus d'espace
+        ...List.generate(3, (i) => Column(
           children: [
-            for (int i = 0; i < 3; i++) ...[
-              Expanded(
-                child: TextFormField(
-                  controller: _controllers[index][2 + i],
-                  decoration: InputDecoration(
-                    hintText: 'Mot ${i + 1}',
-                    prefixIcon: Icon(
-                      Icons.block,
-                      color: AppTheme.errorColor,
-                      size: 16,
-                    ),
-                  ),
-                  validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+            TextFormField(
+              controller: _controllers[index][2 + i],
+              decoration: InputDecoration(
+                labelText: 'Mot interdit ${i + 1}',
+                hintText: 'Ex: ${_getForbiddenWordHint(i)}',
+                prefixIcon: Icon(
+                  Icons.block,
+                  color: AppTheme.errorColor,
                 ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: AppTheme.errorColor.withValues(alpha: 0.05),
               ),
-              if (i < 2) const SizedBox(width: 8),
-            ],
+              validator: (value) => value?.isEmpty == true ? 'Ce champ est requis' : null,
+              textCapitalization: TextCapitalization.none,
+            ),
+            if (i < 2) const SizedBox(height: 12),
           ],
-        ),
+        )),
       ],
     );
+  }
+
+  String _getForbiddenWordHint(int wordIndex) {
+    final hints = [
+      ['félin', 'animal', 'meuble'],
+      ['table', 'bois', 'maison'],
+      ['couleur', 'objet', 'lieu'],
+    ];
+    return hints[wordIndex % hints.length][wordIndex];
   }
 
   bool _canSubmit() {
@@ -437,20 +550,132 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
+      builder: (context) => _WaitingDialog(gameFacade: widget.gameFacade),
+    );
+  }
+}
+
+/// Dialog d'attente avec affichage du nombre de joueurs prêts
+class _WaitingDialog extends StatefulWidget {
+  final GameFacade gameFacade;
+
+  const _WaitingDialog({required this.gameFacade});
+
+  @override
+  State<_WaitingDialog> createState() => _WaitingDialogState();
+}
+
+class _WaitingDialogState extends State<_WaitingDialog> {
+  StreamSubscription? _gameSessionSubscription;
+  int _playersReady = 0;
+  int _totalPlayers = 4;
+
+  @override
+  void initState() {
+    super.initState();
+    _updatePlayerCount();
+    _listenToGameSessionUpdates();
+  }
+
+  @override
+  void dispose() {
+    _gameSessionSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToGameSessionUpdates() {
+    _gameSessionSubscription = widget.gameFacade.gameSessionStream.listen((gameSession) {
+      if (gameSession != null && mounted) {
+        _updatePlayerCount();
+      }
+    });
+  }
+
+  void _updatePlayerCount() {
+    final session = widget.gameFacade.currentGameSession;
+    if (session != null) {
+      setState(() {
+        _totalPlayers = session.players.length;
+        _playersReady = session.players.where((p) => p.challengesSent == 3).length;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      content: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
+            // Icône de validation avec animation
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppTheme.accentColor.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle,
+                size: 64,
+                color: AppTheme.accentColor,
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Message de succès
             Text(
-              'En attente des autres joueurs...',
-              style: Theme.of(context).textTheme.titleMedium,
+              'Vos challenges sont validés !',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.accentColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+
+            // Indicateur de progression
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: CircularProgressIndicator(
+                    value: _playersReady / _totalPlayers,
+                    strokeWidth: 8,
+                    backgroundColor: Colors.grey[200],
+                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                  ),
+                ),
+                Text(
+                  '$_playersReady/$_totalPlayers',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Message d'attente
+            Text(
+              _playersReady == _totalPlayers
+                  ? '🎉 Tous les joueurs sont prêts !'
+                  : 'En attente des autres joueurs...',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'La partie démarre quand tous les joueurs ont créé leurs challenges',
+              'La partie démarre automatiquement quand tout le monde aura validé ses challenges',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppTheme.textSecondary,
               ),
