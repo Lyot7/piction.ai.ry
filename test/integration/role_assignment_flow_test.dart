@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piction_ai_ry/models/player.dart';
 import 'package:piction_ai_ry/utils/role_assignment.dart';
@@ -18,12 +19,12 @@ void main() {
 
     test('SCENARIO: 4 players join, game starts, roles are assigned correctly', () async {
       // ===== PHASE 1: LOBBY - Création et join =====
-      print('📝 PHASE 1: Création de room et join des joueurs');
+      debugPrint('📝 PHASE 1: Création de room et join des joueurs');
 
       // Créer la session
       final session = await mockApi.createGameSession();
       expect(session.id, isNotEmpty);
-      print('✅ Session créée: ${session.id}');
+      debugPrint('✅ Session créée: ${session.id}');
 
       // 4 joueurs rejoignent (2 par équipe)
       final player1 = await mockApi.joinGameSession(session.id, 'red');
@@ -31,47 +32,47 @@ void main() {
       final player3 = await mockApi.joinGameSession(session.id, 'blue');
       final player4 = await mockApi.joinGameSession(session.id, 'blue');
 
-      print('✅ 4 joueurs ont rejoint');
-      print('   - Red team: ${player1.name}, ${player2.name}');
-      print('   - Blue team: ${player3.name}, ${player4.name}');
+      debugPrint('✅ 4 joueurs ont rejoint');
+      debugPrint('   - Red team: ${player1.name}, ${player2.name}');
+      debugPrint('   - Blue team: ${player3.name}, ${player4.name}');
 
       // Rafraîchir la session
       var currentSession = await mockApi.refreshGameSession(session.id);
       expect(currentSession.players.length, equals(4));
       expect(currentSession.isReadyToStart, isTrue);
-      print('✅ Session prête à démarrer');
+      debugPrint('✅ Session prête à démarrer');
 
       // ===== VÉRIFICATION: Aucun rôle avant le start =====
       final allHaveRolesBeforeStart = RoleAssignment.allPlayersHaveRoles(currentSession);
       expect(allHaveRolesBeforeStart, isTrue,
         reason: 'MockApi assigns roles on join (first=drawer, second=guesser)');
-      print('✅ Rôles déjà assignés par le mock (simule backend)');
+      debugPrint('✅ Rôles déjà assignés par le mock (simule backend)');
 
       // ===== PHASE 2: START - Démarrage du jeu =====
-      print('\n📝 PHASE 2: Démarrage du jeu');
+      debugPrint('\n📝 PHASE 2: Démarrage du jeu');
 
       // Démarrer la session
       await mockApi.startGameSession(session.id);
-      print('✅ Session démarrée');
+      debugPrint('✅ Session démarrée');
 
       // Rafraîchir pour récupérer les rôles
       currentSession = await mockApi.refreshGameSession(session.id);
       expect(currentSession.status, equals('challenge'));
-      print('✅ Status changé en "challenge"');
+      debugPrint('✅ Status changé en "challenge"');
 
       // ===== VÉRIFICATION: Les rôles sont assignés =====
       final allHaveRolesAfterStart = RoleAssignment.allPlayersHaveRoles(currentSession);
       expect(allHaveRolesAfterStart, isTrue);
-      print('✅ Tous les joueurs ont des rôles');
+      debugPrint('✅ Tous les joueurs ont des rôles');
 
       // ===== VÉRIFICATION: Les rôles sont valides =====
       final rolesValid = RoleAssignment.areRolesValid(currentSession);
       expect(rolesValid, isTrue,
         reason: 'Each team should have 1 drawer and 1 guesser');
-      print('✅ Distribution des rôles valide (1 drawer + 1 guesser par équipe)');
+      debugPrint('✅ Distribution des rôles valide (1 drawer + 1 guesser par équipe)');
 
       // ===== VÉRIFICATION DÉTAILLÉE: Distribution par équipe =====
-      print('\n📊 Distribution finale des rôles:');
+      debugPrint('\n📊 Distribution finale des rôles:');
 
       for (final teamColor in ['red', 'blue']) {
         final teamPlayers = currentSession.getTeamPlayers(teamColor);
@@ -83,12 +84,12 @@ void main() {
         expect(drawer, isNotNull, reason: 'Team $teamColor should have a drawer');
         expect(guesser, isNotNull, reason: 'Team $teamColor should have a guesser');
 
-        print('   $teamColor team:');
-        print('     - Drawer: ${drawer!.name}');
-        print('     - Guesser: ${guesser!.name}');
+        debugPrint('   $teamColor team:');
+        debugPrint('     - Drawer: ${drawer!.name}');
+        debugPrint('     - Guesser: ${guesser!.name}');
       }
 
-      print('\n✅ TEST PASSED: Role assignment workflow complet');
+      debugPrint('\n✅ TEST PASSED: Role assignment workflow complet');
     });
 
     test('SCENARIO: Roles switch correctly after challenge completion', () async {
@@ -102,7 +103,7 @@ void main() {
 
       var currentSession = await mockApi.refreshGameSession(session.id);
 
-      print('\n📝 PHASE 1: Rôles initiaux');
+      debugPrint('\n📝 PHASE 1: Rôles initiaux');
       final initialRedDrawer = currentSession.getTeamDrawer('red');
       final initialRedGuesser = currentSession.getTeamGuesser('red');
       final initialBlueDrawer = currentSession.getTeamDrawer('blue');
@@ -110,13 +111,13 @@ void main() {
 
       expect(initialRedDrawer, isNotNull);
       expect(initialRedGuesser, isNotNull);
-      print('✅ Red team: ${initialRedDrawer!.name} (drawer), ${initialRedGuesser!.name} (guesser)');
-      print('✅ Blue team: ${initialBlueDrawer!.name} (drawer), ${initialBlueGuesser!.name} (guesser)');
+      debugPrint('✅ Red team: ${initialRedDrawer!.name} (drawer), ${initialRedGuesser!.name} (guesser)');
+      debugPrint('✅ Blue team: ${initialBlueDrawer!.name} (drawer), ${initialBlueGuesser!.name} (guesser)');
 
       // ===== ACTION: Inverser les rôles (après challenge résolu) =====
-      print('\n📝 PHASE 2: Inversion des rôles');
+      debugPrint('\n📝 PHASE 2: Inversion des rôles');
       currentSession = RoleAssignment.switchAllRoles(currentSession);
-      print('✅ Rôles inversés localement');
+      debugPrint('✅ Rôles inversés localement');
 
       // ===== VÉRIFICATION: Les rôles sont inversés =====
       final newRedDrawer = currentSession.getTeamDrawer('red');
@@ -134,23 +135,23 @@ void main() {
       expect(newBlueGuesser!.id, equals(initialBlueDrawer.id),
         reason: 'Previous drawer should now be guesser');
 
-      print('✅ Red team: ${newRedDrawer.name} (drawer), ${newRedGuesser.name} (guesser)');
-      print('✅ Blue team: ${newBlueDrawer.name} (drawer), ${newBlueGuesser.name} (guesser)');
+      debugPrint('✅ Red team: ${newRedDrawer.name} (drawer), ${newRedGuesser.name} (guesser)');
+      debugPrint('✅ Blue team: ${newBlueDrawer.name} (drawer), ${newBlueGuesser.name} (guesser)');
 
       // ===== VÉRIFICATION: Les rôles restent valides après inversion =====
       final rolesStillValid = RoleAssignment.areRolesValid(currentSession);
       expect(rolesStillValid, isTrue,
         reason: 'Role distribution should remain valid after switch');
-      print('✅ Distribution toujours valide après inversion');
+      debugPrint('✅ Distribution toujours valide après inversion');
 
-      print('\n✅ TEST PASSED: Role switching workflow');
+      debugPrint('\n✅ TEST PASSED: Role switching workflow');
     });
 
     test('SCENARIO: Local role assignment when backend does not assign roles', () async {
       // Ce test simule le cas où le backend ne renvoie PAS de rôles
       // et on doit les assigner localement
 
-      print('\n📝 Simulation: Backend sans attribution de rôles');
+      debugPrint('\n📝 Simulation: Backend sans attribution de rôles');
 
       // Créer une session avec 4 joueurs SANS rôles explicitement
       final sessionWithoutRoles = TestData.emptySession().copyWith(
@@ -162,29 +163,29 @@ void main() {
         ],
       );
 
-      print('✅ Session créée sans rôles (simule backend basique)');
+      debugPrint('✅ Session créée sans rôles (simule backend basique)');
 
       // Vérifier qu'aucun joueur n'a de rôle
       final hasRoles = RoleAssignment.allPlayersHaveRoles(sessionWithoutRoles);
       expect(hasRoles, isFalse);
-      print('✅ Confirmé: Aucun joueur n\'a de rôle');
+      debugPrint('✅ Confirmé: Aucun joueur n\'a de rôle');
 
       // ===== ACTION: Attribution locale des rôles =====
-      print('\n📝 Attribution locale des rôles');
+      debugPrint('\n📝 Attribution locale des rôles');
       final sessionWithRoles = RoleAssignment.assignInitialRoles(sessionWithoutRoles);
 
       // ===== VÉRIFICATION: Tous les joueurs ont maintenant des rôles =====
       final allHaveRoles = RoleAssignment.allPlayersHaveRoles(sessionWithRoles);
       expect(allHaveRoles, isTrue);
-      print('✅ Tous les joueurs ont maintenant des rôles');
+      debugPrint('✅ Tous les joueurs ont maintenant des rôles');
 
       // ===== VÉRIFICATION: Distribution valide =====
       final rolesValid = RoleAssignment.areRolesValid(sessionWithRoles);
       expect(rolesValid, isTrue);
-      print('✅ Distribution valide (1 drawer + 1 guesser par équipe)');
+      debugPrint('✅ Distribution valide (1 drawer + 1 guesser par équipe)');
 
       // ===== VÉRIFICATION DÉTAILLÉE: Ordre correct =====
-      print('\n📊 Vérification de l\'ordre d\'attribution:');
+      debugPrint('\n📊 Vérification de l\'ordre d\'attribution:');
 
       for (final teamColor in ['red', 'blue']) {
         final originalTeamPlayers = sessionWithoutRoles.getTeamPlayers(teamColor);
@@ -202,12 +203,12 @@ void main() {
         expect(assignedTeamPlayers[1].id, equals(originalTeamPlayers[1].id),
           reason: 'Should be same player');
 
-        print('   $teamColor team:');
-        print('     - ${assignedTeamPlayers[0].name}: ${assignedTeamPlayers[0].role}');
-        print('     - ${assignedTeamPlayers[1].name}: ${assignedTeamPlayers[1].role}');
+        debugPrint('   $teamColor team:');
+        debugPrint('     - ${assignedTeamPlayers[0].name}: ${assignedTeamPlayers[0].role}');
+        debugPrint('     - ${assignedTeamPlayers[1].name}: ${assignedTeamPlayers[1].role}');
       }
 
-      print('\n✅ TEST PASSED: Local role assignment fallback');
+      debugPrint('\n✅ TEST PASSED: Local role assignment fallback');
     });
 
     test('SCENARIO: Session with less than 4 players cannot start', () async {
@@ -220,10 +221,10 @@ void main() {
         ],
       );
 
-      print('\n📝 Session avec seulement 2 joueurs');
+      debugPrint('\n📝 Session avec seulement 2 joueurs');
       expect(incompleteSession.players.length, equals(2));
       expect(incompleteSession.isReadyToStart, isFalse);
-      print('✅ Session correctement identifiée comme non prête');
+      debugPrint('✅ Session correctement identifiée comme non prête');
 
       // ===== VÉRIFICATION: Ne pas assigner de rôles si pas 4 joueurs =====
       final sessionWithAttemptedRoles = RoleAssignment.assignInitialRoles(incompleteSession);
@@ -232,10 +233,10 @@ void main() {
       final allHaveRoles = RoleAssignment.allPlayersHaveRoles(sessionWithAttemptedRoles);
       expect(allHaveRoles, isFalse,
         reason: 'Roles should not be assigned with less than 4 players');
-      print('✅ Rôles correctement NON assignés (session incomplète)');
+      debugPrint('✅ Rôles correctement NON assignés (session incomplète)');
 
       // ===== ACTION: Ajouter 2 joueurs supplémentaires pour compléter la session =====
-      print('\n📝 Création d\'une session complète (4 joueurs)');
+      debugPrint('\n📝 Création d\'une session complète (4 joueurs)');
       final completeSession = TestData.emptySession().copyWith(
         players: const [
           Player(id: 'p1', name: 'Alice', color: 'red', isHost: true),
@@ -246,15 +247,15 @@ void main() {
       );
       expect(completeSession.players.length, equals(4));
       expect(completeSession.isReadyToStart, isTrue);
-      print('✅ Session maintenant prête (4 joueurs)');
+      debugPrint('✅ Session maintenant prête (4 joueurs)');
 
       // ===== VÉRIFICATION: Maintenant les rôles PEUVENT être assignés =====
       final fullSessionWithRoles = RoleAssignment.assignInitialRoles(completeSession);
       final nowAllHaveRoles = RoleAssignment.allPlayersHaveRoles(fullSessionWithRoles);
       expect(nowAllHaveRoles, isTrue);
-      print('✅ Rôles assignés avec succès après complétion');
+      debugPrint('✅ Rôles assignés avec succès après complétion');
 
-      print('\n✅ TEST PASSED: Incomplete session handling');
+      debugPrint('\n✅ TEST PASSED: Incomplete session handling');
     });
 
     test('SCENARIO: Multiple role switches maintain validity', () async {
@@ -269,11 +270,11 @@ void main() {
 
       var currentSession = await mockApi.refreshGameSession(session.id);
 
-      print('\n📝 Test d\'inversions multiples');
+      debugPrint('\n📝 Test d\'inversions multiples');
 
       // Inverser 5 fois pour tester la robustesse
       for (int i = 1; i <= 5; i++) {
-        print('\n🔄 Inversion #$i');
+        debugPrint('\n🔄 Inversion #$i');
 
         currentSession = RoleAssignment.switchAllRoles(currentSession);
 
@@ -282,7 +283,7 @@ void main() {
         expect(stillValid, isTrue,
           reason: 'Roles should remain valid after $i switches');
 
-        print('   ✅ Distribution toujours valide');
+        debugPrint('   ✅ Distribution toujours valide');
 
         // Vérifier que chaque équipe a toujours 1 drawer et 1 guesser
         for (final teamColor in ['red', 'blue']) {
@@ -296,7 +297,7 @@ void main() {
         }
       }
 
-      print('\n✅ TEST PASSED: Multiple switches maintain validity');
+      debugPrint('\n✅ TEST PASSED: Multiple switches maintain validity');
     });
   });
 
@@ -312,28 +313,28 @@ void main() {
         ],
       );
 
-      print('\n📝 Session avec données malformées');
+      debugPrint('\n📝 Session avec données malformées');
 
       // Devrait détecter que les rôles ne sont pas valides
       final isValid = RoleAssignment.areRolesValid(malformedSession);
       expect(isValid, isFalse,
         reason: 'Should detect invalid role distribution');
-      print('✅ Distribution invalide correctement détectée');
+      debugPrint('✅ Distribution invalide correctement détectée');
 
       // Réassigner les rôles correctement
       final fixedSession = RoleAssignment.assignInitialRoles(malformedSession);
       final nowValid = RoleAssignment.areRolesValid(fixedSession);
       expect(nowValid, isTrue,
         reason: 'Should fix invalid distribution');
-      print('✅ Distribution corrigée avec succès');
+      debugPrint('✅ Distribution corrigée avec succès');
 
-      print('\n✅ TEST PASSED: Malformed data handling');
+      debugPrint('\n✅ TEST PASSED: Malformed data handling');
     });
 
     test('SCENARIO: Empty session does not crash', () {
       final emptySession = TestData.emptySession();
 
-      print('\n📝 Session vide');
+      debugPrint('\n📝 Session vide');
 
       // Ne devrait pas crasher
       expect(() => RoleAssignment.assignInitialRoles(emptySession),
@@ -343,8 +344,8 @@ void main() {
       expect(() => RoleAssignment.areRolesValid(emptySession),
         returnsNormally);
 
-      print('✅ Aucun crash avec session vide');
-      print('\n✅ TEST PASSED: Empty session safety');
+      debugPrint('✅ Aucun crash avec session vide');
+      debugPrint('\n✅ TEST PASSED: Empty session safety');
     });
   });
 }
