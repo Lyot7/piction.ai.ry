@@ -152,6 +152,26 @@ class MockApiService {
     _sessions[sessionId] = updatedSession;
   }
 
+  /// Quitter une session
+  Future<void> leaveGameSession(String sessionId, String playerId) async {
+    _callCount++;
+    await _simulateDelay();
+    if (_shouldFail) throw Exception(_errorMessage);
+
+    final session = _sessions[sessionId];
+    if (session == null) {
+      throw Exception('Game session not found');
+    }
+
+    // Retirer le joueur de la session
+    final updatedPlayers = session.players.where((p) => p.id != playerId).toList();
+    final updatedSession = session.copyWith(players: updatedPlayers);
+    _sessions[sessionId] = updatedSession;
+
+    // Retirer le joueur de la map des joueurs
+    _players.remove(playerId);
+  }
+
   /// Démarrer une session
   Future<void> startGameSession(String sessionId) async {
     _callCount++;

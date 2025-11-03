@@ -91,6 +91,41 @@ class DeepLinkService {
     return 'pictioniary://join/$roomId';
   }
 
+  /// Parse un lien de room pour extraire l'ID
+  ///
+  /// Supporte les formats:
+  /// - https://pictioniary.app/join/ROOM_ID
+  /// - pictioniary://join/ROOM_ID
+  ///
+  /// Retourne null si le lien est invalide
+  String? parseRoomIdFromLink(String link) {
+    if (link.isEmpty) return null;
+
+    try {
+      final uri = Uri.parse(link);
+
+      // Format HTTPS: https://pictioniary.app/join/ROOM_ID
+      if (uri.scheme == 'https' || uri.scheme == 'http') {
+        if (uri.host == 'pictioniary.app' &&
+            uri.pathSegments.length >= 2 &&
+            uri.pathSegments[0] == 'join') {
+          return uri.pathSegments[1];
+        }
+      }
+      // Format App: pictioniary://join/ROOM_ID
+      else if (uri.scheme == 'pictioniary') {
+        if (uri.host == 'join' && uri.pathSegments.isNotEmpty) {
+          return uri.pathSegments.first;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('Erreur parsing lien: $e');
+      return null;
+    }
+  }
+
   /// Libère les ressources
   void dispose() {
     _linkSubscription?.cancel();
