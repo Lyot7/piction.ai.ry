@@ -132,15 +132,19 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
                   // Instructions
                   _buildInstructions(),
                   const SizedBox(height: 24),
-                  
+
                   // Challenges (3 au lieu de 4)
                   ...List.generate(
                     3,
-                    (index) => SlideAnimation(
-                      verticalOffset: 15.0,
-                      child: FadeInAnimation(
-                        duration: const Duration(milliseconds: 100),
-                        child: _buildChallengeCard(index),
+                    (index) => AnimationConfiguration.staggeredList(
+                      position: index,
+                      duration: const Duration(milliseconds: 375),
+                      child: SlideAnimation(
+                        verticalOffset: 15.0,
+                        child: FadeInAnimation(
+                          duration: const Duration(milliseconds: 100),
+                          child: _buildChallengeCard(index),
+                        ),
                       ),
                     ),
                   ),
