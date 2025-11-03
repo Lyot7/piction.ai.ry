@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
+import '../services/game_facade.dart';
 import 'home_screen.dart';
 
 /// Écran des résultats finaux de la partie
 class ResultsScreen extends StatelessWidget {
+  final GameFacade gameFacade;
   final int scoreTeam1;
   final int scoreTeam2;
 
   const ResultsScreen({
     super.key,
+    required this.gameFacade,
     required this.scoreTeam1,
     required this.scoreTeam2,
   });
@@ -334,7 +337,9 @@ class ResultsScreen extends StatelessWidget {
     Navigator.pushAndRemoveUntil(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => HomeScreen(
+          gameFacade: gameFacade,
+        ),
         transitionDuration: const Duration(milliseconds: 150),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
@@ -349,7 +354,9 @@ class ResultsScreen extends StatelessWidget {
     Navigator.pushAndRemoveUntil(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => HomeScreen(
+          gameFacade: gameFacade,
+        ),
         transitionDuration: const Duration(milliseconds: 150),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
