@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
 import '../models/game_session.dart';
@@ -121,67 +120,48 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   }
 
   Widget _buildCreationView() {
-    
-    return AnimationLimiter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 150),
-          childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 20.0,
-            child: FadeInAnimation(child: widget),
-          ),
-          children: [
-            // Icône et titre
-            _buildHeader(),
-            const SizedBox(height: 32),
-            
-            // Message d'erreur
-            if (_errorMessage != null) ...[
-              _buildErrorMessage(_errorMessage!),
-              const SizedBox(height: 24),
-            ],
-            
-            // Bouton de création
-            _buildCreateButton(),
-            const SizedBox(height: 24),
-            
-            // Informations sur les rooms
-            _buildRoomInfo(),
-          ],
-        ),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Icône et titre
+        _buildHeader(),
+        const SizedBox(height: 32),
+        
+        // Message d'erreur
+        if (_errorMessage != null) ...[
+          _buildErrorMessage(_errorMessage!),
+          const SizedBox(height: 24),
+        ],
+        
+        // Bouton de création
+        _buildCreateButton(),
+        const SizedBox(height: 24),
+        
+        // Informations sur les rooms
+        _buildRoomInfo(),
+      ],
     );
   }
 
   Widget _buildQRShareView() {
-    return AnimationLimiter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 150),
-          childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 20.0,
-            child: FadeInAnimation(child: widget),
-          ),
-          children: [
-            // Message de succès
-            _buildSuccessHeader(),
-            const SizedBox(height: 24),
-            
-            // Widget QR Code
-            ShareQRWidget(
-              roomId: _createdGameSession!.id,
-              title: 'Partagez votre partie',
-              subtitle: 'Invitez vos amis à rejoindre la partie',
-            ),
-            const SizedBox(height: 24),
-            
-            // Bouton pour continuer vers le lobby
-            _buildContinueButton(),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Message de succès
+        _buildSuccessHeader(),
+        const SizedBox(height: 24),
+        
+        // Widget QR Code
+        ShareQRWidget(
+          roomId: _createdGameSession!.id,
+          title: 'Partagez votre partie',
+          subtitle: 'Invitez vos amis à rejoindre la partie',
         ),
-      ),
+        const SizedBox(height: 24),
+        
+        // Bouton pour continuer vers le lobby
+        _buildContinueButton(),
+      ],
     );
   }
 

@@ -384,17 +384,69 @@ class ApiService {
     String input2,        // Deuxième mot à deviner
     List<String> forbiddenWords, // 3 mots interdits
   ) async {
+    // Nettoyer et valider les mots (trim et lowercase)
+    final cleanInput1 = input1.trim().toLowerCase();
+    final cleanInput2 = input2.trim().toLowerCase();
+    final cleanForbidden = forbiddenWords
+        .map((word) => word.trim().toLowerCase())
+        .where((word) => word.isNotEmpty)
+        .toList();
+
+    // S'assurer qu'on a exactement 3 mots interdits
+    if (cleanForbidden.length < 3) {
+      throw Exception('3 mots interdits sont requis');
+    }
+
+    // Vérifier que tous les 5 mots sont différents
+    final allWords = [cleanInput1, cleanInput2, ...cleanForbidden];
+    final uniqueWords = allWords.toSet();
+    if (uniqueWords.length != allWords.length) {
+      throw Exception('Tous les mots doivent être différents (les 2 mots à deviner et les 3 mots interdits ne peuvent pas se répéter)');
+    }
+
+    // Vérifier qu'aucun mot n'est vide
+    if (cleanInput1.isEmpty || cleanInput2.isEmpty) {
+      throw Exception('Les mots à deviner ne peuvent pas être vides');
+    }
+
+    // Le backend valide les mots - normaliser pour enlever accents et caractères spéciaux
+    String normalizeWord(String word) {
+      const accents = 'àâäéèêëïîôùûüÿçñ';
+      const replacements = 'aaaeeeeiioouuyyn';
+      var normalized = word.toLowerCase();
+
+      for (int i = 0; i < accents.length; i++) {
+        normalized = normalized.replaceAll(accents[i], replacements[i]);
+      }
+
+      // Garder seulement les lettres a-z
+      return normalized.replaceAll(RegExp(r'[^a-z]'), '');
+    }
+
+    final normalizedInput1 = normalizeWord(cleanInput1);
+    final normalizedInput2 = normalizeWord(cleanInput2);
+    final normalizedForbidden = cleanForbidden.map(normalizeWord).toList();
+
+    // FORMAT CORRECT selon la doc Postman (ligne 239):
+    // Exemple: "une poule sur un mur"
+    // first_word = "une", second_word = "poule", third_word = "sur", fourth_word = "un", fifth_word = "mur"
+    // Les 5 mots de la phrase DANS L'ORDRE!
+    final payload = {
+      'first_word': article1.toLowerCase(),        // "un" ou "une"
+      'second_word': normalizedInput1,             // objet (ex: "chat")
+      'third_word': preposition.toLowerCase(),     // "sur" ou "dans"
+      'fourth_word': article2.toLowerCase(),       // "un" ou "une"
+      'fifth_word': normalizedInput2,              // lieu (ex: "table")
+      'forbidden_words': normalizedForbidden,      // 3 mots interdits
+    };
+
+    // LOG: Voir exactement ce qu'on envoie
+    AppLogger.info('[ApiService] Envoi challenge avec payload: ${jsonEncode(payload)}');
+
     final response = await _request(
       'POST',
       '/game_sessions/$gameSessionId/challenges',
-      body: {
-        'article1': article1,
-        'input1': input1,
-        'preposition': preposition,
-        'article2': article2,
-        'input2': input2,
-        'forbidden_words': forbiddenWords,
-      },
+      body: payload,
     );
 
     _handleResponse(response);

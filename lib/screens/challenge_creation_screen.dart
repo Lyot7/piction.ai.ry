@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
 import 'game_screen.dart';
@@ -63,6 +63,11 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       appBar: AppBar(
         title: const Text('Création des Challenges'),
         actions: [
+          IconButton(
+            onPressed: _autoFillChallenges,
+            icon: const Icon(Icons.auto_fix_high),
+            tooltip: 'Pré-remplir (test)',
+          ),
           TextButton.icon(
             onPressed: _canSubmit() ? _submitChallenges : null,
             icon: const Icon(Icons.send, color: Colors.white),
@@ -78,27 +83,19 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           key: _formKey,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
-            child: AnimationLimiter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Instructions
-                  _buildInstructions(),
-                  const SizedBox(height: 24),
-                  
-                  // Challenges (3 au lieu de 4)
-                  ...List.generate(
-                    3,
-                    (index) => SlideAnimation(
-                      verticalOffset: 15.0,
-                      child: FadeInAnimation(
-                        duration: const Duration(milliseconds: 100),
-                        child: _buildChallengeCard(index),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Instructions
+                _buildInstructions(),
+                const SizedBox(height: 24),
+
+                // Challenges (3 au lieu de 4)
+                ...List.generate(
+                  3,
+                  (index) => _buildChallengeCard(index),
+                ),
+              ],
             ),
           ),
         ),
@@ -203,78 +200,118 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Challenge principal - Première partie: "Un/Une [OBJET]"
+        Text(
+          'Objet',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Dropdown pour "Un" ou "Une"
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: DropdownButton<String>(
+            value: _articles1[index],
+            underline: const SizedBox(),
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(value: 'Un', child: Text('Un')),
+              DropdownMenuItem(value: 'Une', child: Text('Une')),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _articles1[index] = value!;
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Champ de texte pour l'objet (pleine largeur)
+        TextFormField(
+          controller: _controllers[index][0],
+          decoration: const InputDecoration(
+            hintText: 'objet (ex: chat, livre, voiture)...',
+            border: OutlineInputBorder(),
+          ),
+          validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+        ),
+        const SizedBox(height: 20),
+
+        // Challenge principal - Deuxième partie: "Sur/Dans Un/Une [LIEU]"
+        Text(
+          'Lieu',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Dropdowns pour "Sur/Dans" et "Un/Une" sur la même ligne
         Row(
           children: [
-            // Dropdown pour "Un" ou "Une"
-            DropdownButton<String>(
-              value: _articles1[index],
-              items: const [
-                DropdownMenuItem(value: 'Un', child: Text('Un')),
-                DropdownMenuItem(value: 'Une', child: Text('Une')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _articles1[index] = value!;
-                });
-              },
-            ),
-            const SizedBox(width: 8),
+            // Dropdown pour "Sur" ou "Dans"
             Expanded(
-              child: TextFormField(
-                controller: _controllers[index][0],
-                decoration: const InputDecoration(
-                  hintText: 'objet (ex: chat, livre, voiture)...',
-                  border: OutlineInputBorder(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+                child: DropdownButton<String>(
+                  value: _prepositions[index],
+                  underline: const SizedBox(),
+                  isExpanded: true,
+                  items: const [
+                    DropdownMenuItem(value: 'Sur', child: Text('Sur')),
+                    DropdownMenuItem(value: 'Dans', child: Text('Dans')),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _prepositions[index] = value!;
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Dropdown pour "Un" ou "Une"
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: DropdownButton<String>(
+                  value: _articles2[index],
+                  underline: const SizedBox(),
+                  isExpanded: true,
+                  items: const [
+                    DropdownMenuItem(value: 'Un', child: Text('Un')),
+                    DropdownMenuItem(value: 'Une', child: Text('Une')),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _articles2[index] = value!;
+                    });
+                  },
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
-
-        // Challenge principal - Deuxième partie: "Sur/Dans Un/Une [LIEU]"
-        Row(
-          children: [
-            // Dropdown pour "Sur" ou "Dans"
-            DropdownButton<String>(
-              value: _prepositions[index],
-              items: const [
-                DropdownMenuItem(value: 'Sur', child: Text('Sur')),
-                DropdownMenuItem(value: 'Dans', child: Text('Dans')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _prepositions[index] = value!;
-                });
-              },
-            ),
-            const SizedBox(width: 8),
-            // Dropdown pour "Un" ou "Une"
-            DropdownButton<String>(
-              value: _articles2[index],
-              items: const [
-                DropdownMenuItem(value: 'Un', child: Text('Un')),
-                DropdownMenuItem(value: 'Une', child: Text('Une')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _articles2[index] = value!;
-                });
-              },
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                controller: _controllers[index][1],
-                decoration: const InputDecoration(
-                  hintText: 'lieu (ex: table, maison, jardin)...',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => value?.isEmpty == true ? 'Requis' : null,
-              ),
-            ),
-          ],
+        const SizedBox(height: 12),
+        // Champ de texte pour le lieu (pleine largeur)
+        TextFormField(
+          controller: _controllers[index][1],
+          decoration: const InputDecoration(
+            hintText: 'lieu (ex: table, maison, jardin)...',
+            border: OutlineInputBorder(),
+          ),
+          validator: (value) => value?.isEmpty == true ? 'Requis' : null,
         ),
         const SizedBox(height: 24),
         
@@ -287,25 +324,24 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        
-        Row(
+
+        Column(
           children: [
             for (int i = 0; i < 3; i++) ...[
-              Expanded(
-                child: TextFormField(
-                  controller: _controllers[index][2 + i],
-                  decoration: InputDecoration(
-                    hintText: 'Mot ${i + 1}',
-                    prefixIcon: Icon(
-                      Icons.block,
-                      color: AppTheme.errorColor,
-                      size: 16,
-                    ),
+              TextFormField(
+                controller: _controllers[index][2 + i],
+                decoration: InputDecoration(
+                  hintText: 'Mot interdit ${i + 1}',
+                  prefixIcon: Icon(
+                    Icons.block,
+                    color: AppTheme.errorColor,
+                    size: 20,
                   ),
-                  validator: (value) => value?.isEmpty == true ? 'Requis' : null,
+                  border: const OutlineInputBorder(),
                 ),
+                validator: (value) => value?.isEmpty == true ? 'Requis' : null,
               ),
-              if (i < 2) const SizedBox(width: 8),
+              if (i < 2) const SizedBox(height: 12),
             ],
           ],
         ),
@@ -327,6 +363,40 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       }
     }
     return true;
+  }
+
+  void _autoFillChallenges() {
+    setState(() {
+      // Challenge 1: Mots très simples et courants
+      _articles1[0] = 'Un';
+      _prepositions[0] = 'Sur';
+      _articles2[0] = 'Une';
+      _controllers[0][0].text = 'chat';
+      _controllers[0][1].text = 'table';
+      _controllers[0][2].text = 'chien';
+      _controllers[0][3].text = 'maison';
+      _controllers[0][4].text = 'voiture';
+
+      // Challenge 2: Mots basiques
+      _articles1[1] = 'Une';
+      _prepositions[1] = 'Dans';
+      _articles2[1] = 'Un';
+      _controllers[1][0].text = 'pomme';
+      _controllers[1][1].text = 'jardin';
+      _controllers[1][2].text = 'arbre';
+      _controllers[1][3].text = 'soleil';
+      _controllers[1][4].text = 'fleur';
+
+      // Challenge 3: Mots simples
+      _articles1[2] = 'Un';
+      _prepositions[2] = 'Sur';
+      _articles2[2] = 'Une';
+      _controllers[2][0].text = 'livre';
+      _controllers[2][1].text = 'chaise';
+      _controllers[2][2].text = 'porte';
+      _controllers[2][3].text = 'fenetre';
+      _controllers[2][4].text = 'lampe';
+    });
   }
 
   Future<void> _submitChallenges() async {
@@ -397,56 +467,187 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              'En attente des autres joueurs...',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'La partie démarre quand tous les joueurs ont créé leurs challenges',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppTheme.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _WaitingDialog(gameFacade: widget.gameFacade),
     );
   }
 
   Future<void> _waitForGameToStart(GameFacade gameFacade) async {
-    // Polling toutes les 2 secondes pour vérifier si le status est "playing"
+    // Écouter le stream du statut pour une redirection temps-réel
     const maxWaitTime = Duration(minutes: 5);
-    const pollInterval = Duration(seconds: 2);
     final startTime = DateTime.now();
 
-    while (DateTime.now().difference(startTime) < maxWaitTime) {
-      try {
-        await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
-        final status = gameFacade.currentStatus;
+    // Créer une completer pour attendre le changement de status
+    final completer = Completer<void>();
 
-        if (status == 'playing') {
-          // Le jeu a commencé !
-          return;
+    // Écouter le stream du status
+    late final StreamSubscription<String> statusSubscription;
+    statusSubscription = gameFacade.statusStream.listen((status) {
+      if (status == 'playing' && !completer.isCompleted) {
+        completer.complete();
+        statusSubscription.cancel();
+      }
+    });
+
+    // Polling en parallèle pour rafraîchir régulièrement
+    // ignore: unused_local_variable
+    final pollingFuture = Future(() async {
+      const pollInterval = Duration(seconds: 2);
+      while (!completer.isCompleted) {
+        try {
+          await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
+
+          // Vérifier timeout
+          if (DateTime.now().difference(startTime) > maxWaitTime) {
+            if (!completer.isCompleted) {
+              completer.completeError(
+                Exception('Timeout: Le jeu n\'a pas démarré après 5 minutes')
+              );
+            }
+            break;
+          }
+
+          await Future.delayed(pollInterval);
+        } catch (e) {
+          // Ignorer les erreurs transitoires
+          await Future.delayed(pollInterval);
+        }
+      }
+    });
+
+    try {
+      // Attendre que le status passe à "playing" ou timeout
+      await completer.future;
+    } finally {
+      statusSubscription.cancel();
+    }
+  }
+}
+
+/// Widget d'attente avec indicateur de progression
+class _WaitingDialog extends StatefulWidget {
+  final GameFacade gameFacade;
+
+  const _WaitingDialog({required this.gameFacade});
+
+  @override
+  State<_WaitingDialog> createState() => _WaitingDialogState();
+}
+
+class _WaitingDialogState extends State<_WaitingDialog> {
+  int _totalPlayers = 4;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateProgress();
+  }
+
+  Future<void> _updateProgress() async {
+    while (mounted) {
+      try {
+        // Récupérer la session
+        await widget.gameFacade.refreshGameSession(
+          widget.gameFacade.currentGameSession!.id,
+        );
+
+        final session = widget.gameFacade.currentGameSession;
+        if (session != null) {
+          // Mettre à jour le nombre total de joueurs
+          final playerCount = session.players.length;
+
+          // L'API listSessionChallenges() ne fonctionne qu'en mode "finished"
+          // Donc on affiche simplement un indicateur d'attente et le nombre
+          // de joueurs restants. Le backend change le status à "playing"
+          // automatiquement quand tous les joueurs ont fini.
+
+          if (mounted) {
+            setState(() {
+              _totalPlayers = playerCount;
+            });
+          }
         }
 
-        // Attendre avant le prochain poll
-        await Future.delayed(pollInterval);
+        await Future.delayed(const Duration(seconds: 2));
       } catch (e) {
-        // Ignorer les erreurs transitoires, continuer le polling
-        await Future.delayed(pollInterval);
+        await Future.delayed(const Duration(seconds: 2));
       }
     }
+  }
 
-    // Timeout après 5 minutes
-    throw Exception('Timeout: Le jeu n\'a pas démarré après 5 minutes');
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Indicateur de progression circulaire indéterminé
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 120,
+                  height: 120,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 10,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.hourglass_empty,
+                      size: 40,
+                      color: AppTheme.primaryColor,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${_totalPlayers - 1}',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'joueur(s)',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Vos challenges sont créés !',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppTheme.accentColor,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'En attente de ${_totalPlayers - 1} autre(s) joueur(s)...',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'La partie démarre automatiquement quand tous les joueurs auront fini',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppTheme.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 }

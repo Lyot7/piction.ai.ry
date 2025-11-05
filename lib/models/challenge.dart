@@ -44,6 +44,27 @@ class Challenge {
   });
 
   factory Challenge.fromJson(Map<String, dynamic> json) {
+    // Construire la liste des mots interdits à partir de third_word, fourth_word, fifth_word
+    final List<String> forbidden = [];
+    if (json['third_word'] != null && json['third_word'].toString().isNotEmpty) {
+      forbidden.add(json['third_word'].toString());
+    }
+    if (json['fourth_word'] != null && json['fourth_word'].toString().isNotEmpty) {
+      forbidden.add(json['fourth_word'].toString());
+    }
+    if (json['fifth_word'] != null && json['fifth_word'].toString().isNotEmpty) {
+      forbidden.add(json['fifth_word'].toString());
+    }
+
+    // Fallback vers forbidden_words si disponible
+    if (forbidden.isEmpty && json['forbidden_words'] != null) {
+      forbidden.addAll(
+        (json['forbidden_words'] as List<dynamic>)
+            .map((word) => word.toString())
+            .toList()
+      );
+    }
+
     return Challenge(
       id: (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString(),
       gameSessionId: (json['gameSessionId'] ?? '').toString(),
@@ -52,9 +73,7 @@ class Challenge {
       preposition: json['preposition'] ?? 'Sur',
       article2: json['article2'] ?? json['article_2'] ?? 'Une',
       input2: json['input2'] ?? json['input_2'] ?? json['second_word'] ?? '',
-      forbiddenWords: (json['forbidden_words'] as List<dynamic>?)
-          ?.map((word) => word.toString())
-          .toList() ?? [],
+      forbiddenWords: forbidden,
       prompt: json['prompt'],
       imageUrl: json['imageUrl'] ?? json['image_url'],
       answer: json['answer'],
@@ -76,11 +95,13 @@ class Challenge {
       'id': id,
       'gameSessionId': gameSessionId,
       'article1': article1,
-      'input1': input1,
+      'first_word': input1,
       'preposition': preposition,
       'article2': article2,
-      'input2': input2,
-      'forbidden_words': forbiddenWords,
+      'second_word': input2,
+      if (forbiddenWords.isNotEmpty) 'third_word': forbiddenWords[0],
+      if (forbiddenWords.length > 1) 'fourth_word': forbiddenWords[1],
+      if (forbiddenWords.length > 2) 'fifth_word': forbiddenWords[2],
       if (prompt != null) 'prompt': prompt,
       if (imageUrl != null) 'imageUrl': imageUrl,
       if (answer != null) 'answer': answer,

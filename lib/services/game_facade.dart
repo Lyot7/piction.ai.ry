@@ -225,11 +225,71 @@ class GameFacade {
       throw Exception('Aucune session active');
     }
 
-    await session.startGameSession(_currentGameSession!.id);
-    gameState.startGame();
+    // Vérifier si la session est déjà démarrée
+    if (_currentGameSession!.status != 'lobby') {
+      AppLogger.warning('[GameFacade] La session est déjà en cours (status: ${_currentGameSession!.status})');
+      // Si déjà en challenge ou plus loin, considérer comme succès
+      return;
+    }
 
-    // Rafraîchir pour récupérer les changements
-    await refreshGameSession(_currentGameSession!.id);
+    try {
+      AppLogger.info('[GameFacade] Démarrage de la session ${_currentGameSession!.id}');
+
+      // Étape 1: Appeler le backend pour démarrer la session
+      await session.startGameSession(_currentGameSession!.id);
+
+      // Étape 2: Rafraîchir la session pour récupérer les rôles du backend
+      AppLogger.info('[GameFacade] Rafraîchissement après démarrage pour récupérer les rôles');
+      await refreshGameSession(_currentGameSession!.id);
+
+      // Étape 3: Vérifier si les rôles ont été assignés par le backend
+      if (_currentGameSession != null) {
+        final allHaveRoles = role.allPlayersHaveRoles(_currentGameSession!);
+
+        if (!allHaveRoles) {
+          AppLogger.warning('[GameFacade] Le backend n\'a pas assigné les rôles, attribution locale');
+
+          // Assigner les rôles localement
+          final sessionWithRoles = role.assignInitialRoles(_currentGameSession!);
+
+          // Mettre à jour la session locale
+          _currentGameSession = sessionWithRoles;
+          _gameSessionController.add(_currentGameSession);
+
+          AppLogger.success('[GameFacade] Rôles assignés localement avec succès');
+        } else {
+          AppLogger.success('[GameFacade] Rôles déjà assignés par le backend');
+        }
+
+        // Vérifier que les rôles sont valides
+        final rolesValid = role.areRolesValid(_currentGameSession!);
+        if (!rolesValid) {
+          AppLogger.error('[GameFacade] Les rôles ne sont pas valides !', null);
+          throw Exception('Les rôles ne sont pas correctement assignés');
+        }
+
+        // Log de l'état final
+        AppLogger.info('[GameFacade] État final des joueurs:');
+        for (final player in _currentGameSession!.players) {
+          AppLogger.info('[GameFacade]   - ${player.name}: ${player.color} team, ${player.role}');
+        }
+      }
+
+      // Étape 4: Initialiser la phase à "drawing" pour quand le jeu commence
+      if (_currentGameSession != null) {
+        _currentGameSession = _currentGameSession!.copyWith(gamePhase: 'drawing');
+        _gameSessionController.add(_currentGameSession);
+        AppLogger.success('[GameFacade] Phase initialisée à "drawing"');
+      }
+
+      // Étape 5: Mettre à jour le statut
+      gameState.startGame();
+
+      AppLogger.success('[GameFacade] Session démarrée avec succès');
+    } catch (e) {
+      AppLogger.error('[GameFacade] Erreur lors du démarrage de la session', e);
+      throw Exception('Erreur lors du démarrage de la session: $e');
+    }
   }
 
   // --- Team Management ---

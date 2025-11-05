@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../themes/app_theme.dart';
@@ -9,6 +8,7 @@ import '../models/player.dart';
 import '../services/game_facade.dart';
 import '../services/deep_link_service.dart';
 import '../utils/logger.dart';
+import 'challenge_creation_screen.dart';
 
 /// Écran de lobby pour organiser les équipes et commencer la partie
 class LobbyScreen extends StatefulWidget {
@@ -93,6 +93,15 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Future<void> _startGame() async {
     if (!_canStartGame()) return;
 
+    // Vérifier si la session n'est pas déjà démarrée
+    if (_gameSession.status != 'lobby') {
+      AppLogger.warning('[LobbyScreen] La session est déjà en cours (status: ${_gameSession.status})');
+      return;
+    }
+
+    // Empêcher les double clics
+    if (_isLoading) return;
+
     // Log de l'état avant démarrage
     AppLogger.info('[LobbyScreen] Démarrage de la partie...');
     AppLogger.info('[LobbyScreen] Session ID: ${_gameSession.id}');
@@ -108,13 +117,26 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
     try {
       await widget.gameFacade.startGameSession();
-      // La navigation vers l'écran de création de challenges se fera automatiquement
-      // via le stream de statut
+
+      // Navigation vers l'écran de création de challenges
+      if (mounted) {
+        AppLogger.success('[LobbyScreen] Navigation vers ChallengeCreationScreen');
+        await Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChallengeCreationScreen(
+              gameFacade: widget.gameFacade,
+            ),
+          ),
+        );
+      }
     } catch (e) {
       AppLogger.error('[LobbyScreen] ERREUR démarrage', e);
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -155,30 +177,21 @@ class _LobbyScreenState extends State<LobbyScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: AnimationLimiter(
-            child: Column(
-              children: AnimationConfiguration.toStaggeredList(
-                duration: const Duration(milliseconds: 150),
-                childAnimationBuilder: (widget) => SlideAnimation(
-                  verticalOffset: 20.0,
-                  child: FadeInAnimation(child: widget),
-                ),
-                children: [
-                  // Message d'erreur
-                  if (_errorMessage != null) ...[
-                    _buildErrorMessage(),
-                    const SizedBox(height: 16),
-                  ],
+          child: Column(
+            children: [
+              // Message d'erreur
+              if (_errorMessage != null) ...[
+                _buildErrorMessage(),
+                const SizedBox(height: 16),
+              ],
 
-                  // Code de partie et QR Code
-                  _buildGameCodeAndQRCard(),
-                  const SizedBox(height: 16),
+              // Code de partie et QR Code
+              _buildGameCodeAndQRCard(),
+              const SizedBox(height: 16),
 
-                  // Équipes en vertical
-                  _buildTeamsSection(),
-                ],
-              ),
-            ),
+              // Équipes en vertical
+              _buildTeamsSection(),
+            ],
           ),
         ),
       ),

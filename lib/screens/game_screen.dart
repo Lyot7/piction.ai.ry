@@ -54,24 +54,37 @@ class _GameScreenState extends State<GameScreen> {
     try {
       setState(() => _isLoading = true);
 
-      // Déterminer le rôle du joueur
+      // Déterminer la phase de jeu et le rôle du joueur
+      final gameSession = widget.gameFacade.currentGameSession;
+      final gamePhase = gameSession?.gamePhase ?? 'drawing';
       final role = widget.gameFacade.getCurrentPlayerRole();
-      AppLogger.info('[GameScreen] Rôle du joueur: $role');
 
-      // Récupérer les challenges en fonction du rôle
-      if (role == 'drawer') {
-        await widget.gameFacade.refreshMyChallenges();
-        _challenges = widget.gameFacade.myChallenges;
-      } else {
-        await widget.gameFacade.refreshChallengesToGuess();
-        _challenges = widget.gameFacade.challengesToGuess;
+      AppLogger.info('[GameScreen] Phase: $gamePhase, Rôle: $role');
+
+      // Récupérer les challenges en fonction de la phase et du rôle
+      // Phase DRAWING: Drawer dessine, Guesser attend
+      // Phase GUESSING: Drawer attend, Guesser devine
+      if (gamePhase == 'drawing') {
+        if (role == 'drawer') {
+          // Le drawer génère des images pour ses challenges
+          await widget.gameFacade.refreshMyChallenges();
+          _challenges = widget.gameFacade.myChallenges;
+        } else {
+          // Le guesser attend pendant la phase de dessination
+          _challenges = [];
+        }
+      } else if (gamePhase == 'guessing') {
+        if (role == 'guesser') {
+          // Le guesser devine les images de son coéquipier
+          await widget.gameFacade.refreshChallengesToGuess();
+          _challenges = widget.gameFacade.challengesToGuess;
+        } else {
+          // Le drawer attend pendant la phase de devination
+          _challenges = [];
+        }
       }
 
       AppLogger.info('[GameScreen] ${_challenges.length} challenges chargés');
-
-      if (_challenges.isEmpty) {
-        throw Exception('Aucun challenge disponible');
-      }
 
       setState(() {
         _isLoading = false;
@@ -186,11 +199,91 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     final role = widget.gameFacade.getCurrentPlayerRole();
+    final gameSession = widget.gameFacade.currentGameSession;
+    final gamePhase = gameSession?.gamePhase ?? 'drawing';
+
+    // Si pas de challenges, afficher un message d'attente
+    if (_challenges.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('Phase: ${gamePhase == 'drawing' ? 'Dessination' : 'Devination'}'),
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _buildHeaderWithoutChallenge(),
+                const SizedBox(height: 32),
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          gamePhase == 'drawing' ? Icons.brush : Icons.search,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          gamePhase == 'drawing'
+                              ? 'En attente...\nVotre coéquipier dessine les challenges'
+                              : 'En attente...\nVotre coéquipier devine les challenges',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final currentChallenge = _challenges[_currentChallengeIndex];
+
+    // Déterminer la vue à afficher en fonction de la phase et du rôle
+    Widget contentView;
+    String title;
+
+    if (gamePhase == 'drawing' && role == 'drawer') {
+      // Phase de dessination - Drawer dessine
+      contentView = _DrawerView(
+        challenge: currentChallenge,
+        gameFacade: widget.gameFacade,
+        onImageGenerated: () => setState(() {}),
+        onScoreDelta: _applyScoreDelta,
+        onChallengeComplete: _nextChallenge,
+      );
+      title = 'Dessinateur';
+    } else if (gamePhase == 'guessing' && role == 'guesser') {
+      // Phase de devination - Guesser devine
+      contentView = _GuesserView(
+        challenge: currentChallenge,
+        gameFacade: widget.gameFacade,
+        onScoreDelta: _applyScoreDelta,
+        onChallengeComplete: _nextChallenge,
+      );
+      title = 'Devineur';
+    } else {
+      // Cas par défaut (ne devrait pas arriver)
+      contentView = Center(
+        child: Text('Erreur de synchronisation'),
+      );
+      title = 'Erreur';
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(role == 'drawer' ? 'Dessinateur' : 'Devineur'),
+        title: Text(title),
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
       ),
@@ -201,22 +294,7 @@ class _GameScreenState extends State<GameScreen> {
             children: [
               _buildHeader(currentChallenge),
               const SizedBox(height: 12),
-              Expanded(
-                child: role == 'drawer'
-                    ? _DrawerView(
-                        challenge: currentChallenge,
-                        gameFacade: widget.gameFacade,
-                        onImageGenerated: () => setState(() {}),
-                        onScoreDelta: _applyScoreDelta,
-                        onChallengeComplete: _nextChallenge,
-                      )
-                    : _GuesserView(
-                        challenge: currentChallenge,
-                        gameFacade: widget.gameFacade,
-                        onScoreDelta: _applyScoreDelta,
-                        onChallengeComplete: _nextChallenge,
-                      ),
-              ),
+              Expanded(child: contentView),
             ],
           ),
         ),
@@ -234,6 +312,18 @@ class _GameScreenState extends State<GameScreen> {
         _buildScoreChip('Bleue', _blueTeamScore, AppTheme.teamBlueColor),
         const Spacer(),
         Text('${_currentChallengeIndex + 1}/${_challenges.length}'),
+      ],
+    );
+  }
+
+  Widget _buildHeaderWithoutChallenge() {
+    return Row(
+      children: [
+        _buildTimerChip(),
+        const SizedBox(width: 8),
+        _buildScoreChip('Rouge', _redTeamScore, AppTheme.teamRedColor),
+        const SizedBox(width: 8),
+        _buildScoreChip('Bleue', _blueTeamScore, AppTheme.teamBlueColor),
       ],
     );
   }

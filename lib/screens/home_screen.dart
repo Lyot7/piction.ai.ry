@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
 import 'create_room_screen.dart';
@@ -49,40 +48,25 @@ class HomeScreen extends StatelessWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
-            child: AnimationLimiter(
-              child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: MediaQuery.of(context).size.height - 48, // Account for padding
-                  ),
-                  child: AnimationConfiguration.staggeredList(
-                    position: 0,
-                    duration: const Duration(milliseconds: 150),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // Logo et titre
-                        SlideAnimation(
-                          verticalOffset: 50.0,
-                          child: FadeInAnimation(child: _buildHeader(context)),
-                        ),
-                        const SizedBox(height: 60),
-                        
-                        // Boutons principaux
-                        SlideAnimation(
-                          verticalOffset: 50.0,
-                          child: FadeInAnimation(child: _buildMainButtons(context)),
-                        ),
-                        const SizedBox(height: 40),
-                        
-                        // Description du jeu
-                        SlideAnimation(
-                          verticalOffset: 50.0,
-                          child: FadeInAnimation(child: _buildGameDescription()),
-                        ),
-                      ],
-                    ),
-                  ),
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: MediaQuery.of(context).size.height - 48, // Account for padding
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Logo et titre
+                    _buildHeader(context),
+                    const SizedBox(height: 60),
+
+                    // Boutons principaux
+                    _buildMainButtons(context),
+                    const SizedBox(height: 40),
+
+                    // Description du jeu
+                    _buildGameDescription(),
+                  ],
                 ),
               ),
             ),

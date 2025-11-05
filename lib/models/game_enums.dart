@@ -165,6 +165,47 @@ enum PlayerRole {
   }
 }
 
+/// Phase de jeu pendant la partie
+enum GamePhase {
+  /// Phase de dessination: Tous les joueurs génèrent des images
+  drawing,
+
+  /// Phase de devination: Les équipes devinent les challenges de leurs coéquipiers
+  guessing;
+
+  /// Convertit depuis une string (pour API/JSON)
+  static GamePhase fromString(String value) {
+    switch (value.toLowerCase()) {
+      case 'drawing':
+        return GamePhase.drawing;
+      case 'guessing':
+        return GamePhase.guessing;
+      default:
+        throw ArgumentError('Invalid game phase: $value');
+    }
+  }
+
+  /// Convertit vers une string (pour API/JSON)
+  String toApiString() {
+    switch (this) {
+      case GamePhase.drawing:
+        return 'drawing';
+      case GamePhase.guessing:
+        return 'guessing';
+    }
+  }
+
+  /// Nom affiché à l'utilisateur
+  String get displayName {
+    switch (this) {
+      case GamePhase.drawing:
+        return 'Phase de Dessination';
+      case GamePhase.guessing:
+        return 'Phase de Devination';
+    }
+  }
+}
+
 /// Extensions pour faciliter les conversions
 extension GameStatusExtension on String {
   /// Convertit une string en GameStatus
@@ -179,4 +220,9 @@ extension TeamColorExtension on String {
 extension PlayerRoleExtension on String {
   /// Convertit une string en PlayerRole
   PlayerRole toPlayerRole() => PlayerRole.fromString(this);
+}
+
+extension GamePhaseExtension on String {
+  /// Convertit une string en GamePhase
+  GamePhase toGamePhase() => GamePhase.fromString(this);
 }

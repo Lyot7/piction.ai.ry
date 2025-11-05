@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
 import '../services/deep_link_service.dart';
@@ -156,43 +155,34 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   }
 
   Widget _buildSearchSection() {
-    return AnimationLimiter(
-      child: Column(
-        children: AnimationConfiguration.toStaggeredList(
-          duration: const Duration(milliseconds: 150),
-          childAnimationBuilder: (widget) => SlideAnimation(
-            verticalOffset: 20.0,
-            child: FadeInAnimation(child: widget),
-          ),
-          children: [
-            // Titre et description
-            _buildHeader(),
-            const SizedBox(height: 32),
-            
-            // Champ de recherche
-            _buildSearchField(),
-            const SizedBox(height: 24),
-            
-            // Bouton rejoindre
-            _buildJoinButton(),
-            const SizedBox(height: 24),
-            
-            // Séparateur "OU"
-            _buildOrSeparator(),
-            const SizedBox(height: 24),
-            
-            // Bouton de scan QR principal
-            _buildScanQRButton(),
-            const SizedBox(height: 32),
-            
-            // Message d'erreur
-            if (_errorMessage != null) ...[
-              _buildErrorMessage(),
-              const SizedBox(height: 16),
-            ],
-          ],
-        ),
-      ),
+    return Column(
+      children: [
+        // Titre et description
+        _buildHeader(),
+        const SizedBox(height: 32),
+        
+        // Champ de recherche
+        _buildSearchField(),
+        const SizedBox(height: 24),
+        
+        // Bouton rejoindre
+        _buildJoinButton(),
+        const SizedBox(height: 24),
+        
+        // Séparateur "OU"
+        _buildOrSeparator(),
+        const SizedBox(height: 24),
+        
+        // Bouton de scan QR principal
+        _buildScanQRButton(),
+        const SizedBox(height: 32),
+        
+        // Message d'erreur
+        if (_errorMessage != null) ...[
+          _buildErrorMessage(),
+          const SizedBox(height: 16),
+        ],
+      ],
     );
   }
 

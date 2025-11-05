@@ -368,9 +368,15 @@ class GameService {
         }
       }
 
-      // Étape 4: Mettre à jour le statut
+      // Étape 4: Mettre à jour le statut et la phase initiale
       _currentStatus = 'challenge';
       _statusController.add(_currentStatus);
+
+      // Initialiser la phase à "drawing" pour quand le jeu commence
+      if (_currentGameSession != null) {
+        _currentGameSession = _currentGameSession!.copyWith(gamePhase: 'drawing');
+        _gameSessionController.add(_currentGameSession);
+      }
 
       // Tenter transition auto
       _checkTransitions();
@@ -646,34 +652,31 @@ class GameService {
     }
   }
 
-  // ===== GESTION DES RÔLES =====
+  // ===== GESTION DES PHASES =====
 
-  /// Inverse les rôles de tous les joueurs (drawer <-> guesser)
-  Future<void> switchAllRoles() async {
+  /// Passe de la phase de dessination à la phase de devination
+  /// Cette transition se fait une seule fois pendant le jeu
+  Future<void> switchToGuessingPhase() async {
     if (_currentGameSession == null) {
       throw Exception('Aucune session active');
     }
 
+    if (_currentGameSession!.gamePhase != 'drawing') {
+      AppLogger.warning('[GameService] Tentative de passer à la phase de devination alors que nous ne sommes pas en phase de dessination');
+      return;
+    }
+
     try {
-      AppLogger.info('[GameService] Inversion des rôles de tous les joueurs');
+      AppLogger.info('[GameService] Passage à la phase de devination');
 
-      // Inverser les rôles localement
-      final sessionWithSwitchedRoles = RoleAssignment.switchAllRoles(_currentGameSession!);
-
-      // Mettre à jour la session locale
-      _currentGameSession = sessionWithSwitchedRoles;
+      // Mettre à jour la phase localement
+      _currentGameSession = _currentGameSession!.copyWith(gamePhase: 'guessing');
       _gameSessionController.add(_currentGameSession);
 
-      // Log de l'état après inversion
-      AppLogger.info('[GameService] Rôles après inversion:');
-      for (final player in _currentGameSession!.players) {
-        AppLogger.info('[GameService]   - ${player.name}: ${player.color} team, ${player.role}');
-      }
-
-      AppLogger.success('[GameService] Rôles inversés avec succès');
+      AppLogger.success('[GameService] Phase de devination activée');
     } catch (e) {
-      AppLogger.error('[GameService] Erreur lors de l\'inversion des rôles', e);
-      throw Exception('Erreur lors de l\'inversion des rôles: $e');
+      AppLogger.error('[GameService] Erreur lors du passage à la phase de devination', e);
+      throw Exception('Erreur lors du passage à la phase de devination: $e');
     }
   }
 
@@ -693,16 +696,29 @@ class GameService {
     return player?.role;
   }
 
+  /// Retourne la phase actuelle du jeu (drawing ou guessing)
+  String? getCurrentGamePhase() {
+    return _currentGameSession?.gamePhase;
+  }
+
+  /// Vérifie si on est en phase de dessination
+  bool isDrawingPhase() {
+    return _currentGameSession?.gamePhase == 'drawing';
+  }
+
+  /// Vérifie si on est en phase de devination
+  bool isGuessingPhase() {
+    return _currentGameSession?.gamePhase == 'guessing';
+  }
+
   /// Vérifie si c'est le tour du joueur actuel
+  /// En phase de dessination: tout le monde dessine
+  /// En phase de devination: tout le monde devine
   bool isMyTurn() {
     if (_currentPlayer == null || _currentGameSession == null) return false;
 
-    final player = _currentGameSession!.players
-        .where((p) => p.id == _currentPlayer!.id)
-        .firstOrNull;
-
-    // C'est le tour du joueur s'il est drawer
-    return player?.isDrawer ?? false;
+    // Pendant les 2 phases, tous les joueurs participent simultanément
+    return _currentStatus == 'playing';
   }
 
   // ===== UTILITAIRES =====

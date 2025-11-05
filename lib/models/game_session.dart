@@ -9,6 +9,7 @@ class GameSession {
   final List<Player> players;
   final Map<String, int> teamScores; // Scores par équipe: {"red": 100, "blue": 100}
   final int currentTurn; // Index du challenge actuel (0-based)
+  final String? gamePhase; // "drawing" ou "guessing" (uniquement en "playing")
   final DateTime? createdAt;
   final DateTime? startedAt;
 
@@ -18,6 +19,7 @@ class GameSession {
     required this.players,
     this.teamScores = const {"red": 100, "blue": 100},
     this.currentTurn = 0,
+    this.gamePhase,
     this.createdAt,
     this.startedAt,
   });
@@ -71,6 +73,7 @@ class GameSession {
       players: players,
       teamScores: scores,
       currentTurn: json['currentTurn'] ?? json['current_turn'] ?? 0,
+      gamePhase: json['gamePhase'] ?? json['game_phase'],
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'])
           : json['created_at'] != null
@@ -91,6 +94,7 @@ class GameSession {
       'players': players.map((player) => player.toJson()).toList(),
       'teamScores': teamScores,
       'currentTurn': currentTurn,
+      if (gamePhase != null) 'gamePhase': gamePhase,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
     };
@@ -102,6 +106,7 @@ class GameSession {
     List<Player>? players,
     Map<String, int>? teamScores,
     int? currentTurn,
+    String? gamePhase,
     DateTime? createdAt,
     DateTime? startedAt,
   }) {
@@ -111,6 +116,7 @@ class GameSession {
       players: players ?? this.players,
       teamScores: teamScores ?? this.teamScores,
       currentTurn: currentTurn ?? this.currentTurn,
+      gamePhase: gamePhase ?? this.gamePhase,
       createdAt: createdAt ?? this.createdAt,
       startedAt: startedAt ?? this.startedAt,
     );

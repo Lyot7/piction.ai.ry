@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
 import 'home_screen.dart';
@@ -40,42 +39,24 @@ class ResultsScreen extends StatelessWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: AnimationLimiter(
-              child: AnimationConfiguration.staggeredList(
-                position: 0,
-                duration: const Duration(milliseconds: 150),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Icône et titre de fin
-                    SlideAnimation(
-                      verticalOffset: 20.0,
-                      child: FadeInAnimation(child: _buildHeader(winner)),
-                    ),
-                    const SizedBox(height: 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Icône et titre de fin
+                _buildHeader(winner),
+                const SizedBox(height: 40),
 
-                    // Scores finaux
-                    SlideAnimation(
-                      verticalOffset: 20.0,
-                      child: FadeInAnimation(child: _buildScoresCard()),
-                    ),
-                    const SizedBox(height: 40),
+                // Scores finaux
+                _buildScoresCard(),
+                const SizedBox(height: 40),
 
-                    // Statistiques (optional future feature)
-                    SlideAnimation(
-                      verticalOffset: 20.0,
-                      child: FadeInAnimation(child: _buildStatsCard()),
-                    ),
-                    const SizedBox(height: 40),
+                // Statistiques (optional future feature)
+                _buildStatsCard(),
+                const SizedBox(height: 40),
 
-                    // Boutons d'action
-                    SlideAnimation(
-                      verticalOffset: 20.0,
-                      child: FadeInAnimation(child: _buildActionButtons(context)),
-                    ),
-                  ],
-                ),
-              ),
+                // Boutons d'action
+                _buildActionButtons(context),
+              ],
             ),
           ),
         ),
