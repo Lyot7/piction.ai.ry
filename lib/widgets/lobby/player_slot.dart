@@ -139,25 +139,7 @@ class PlayerSlot extends StatelessWidget {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (player?.role != null)
-                  Row(
-                    children: [
-                      Icon(
-                        player!.role == 'drawer' ? Icons.brush : Icons.search,
-                        size: 12,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        player!.role == 'drawer' ? 'Dessinateur' : 'Devineur',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ],
-                  ),
+                // Rôle retiré de l'UI (attribution silencieuse pour backend uniquement)
               ],
             ),
           ),

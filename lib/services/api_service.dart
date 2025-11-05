@@ -68,6 +68,7 @@ class ApiService {
 
     // Log détaillé pour debug (masquer le JWT complet)
     AppLogger.info('[ApiService] REQUEST $method $endpoint - JWT: ${_jwt != null ? "présent (${_jwt!.substring(0, 10)}...)" : "absent"}');
+    AppLogger.info('[ApiService] FULL URL: $url');
     if (body != null) {
       AppLogger.info('[ApiService] REQUEST BODY: ${jsonEncode(body)}');
     }
@@ -282,17 +283,29 @@ class ApiService {
     // Parser la session de base
     final session = GameSession.fromJson(data);
 
+    AppLogger.info('[ApiService] 🔍 AFTER PARSING - Players count: ${session.players.length}');
+    for (int i = 0; i < session.players.length; i++) {
+      final p = session.players[i];
+      AppLogger.info('[ApiService] 🔍 Player[$i]: name="${p.name}", id=${p.id}, challengesSent=${p.challengesSent}');
+    }
+
     // Si les joueurs ont des noms vides, c'est que le serveur renvoie red_team/blue_team
     // Il faut enrichir avec les vraies données du serveur
     if (session.players.isNotEmpty && session.players.first.name.isEmpty) {
       AppLogger.warning('[ApiService] Joueurs avec noms vides, enrichissement requis');
       final enrichedPlayers = await _enrichPlayersFromServer(session.players, data);
       final enrichedSession = session.copyWith(players: enrichedPlayers);
-      AppLogger.info('[ApiService] Enriched players: ${enrichedSession.players.map((p) => "${p.name} (${p.id})").join(", ")}');
+
+      AppLogger.info('[ApiService] 🔍 AFTER ENRICHMENT - Players count: ${enrichedSession.players.length}');
+      for (int i = 0; i < enrichedSession.players.length; i++) {
+        final p = enrichedSession.players[i];
+        AppLogger.info('[ApiService] 🔍 Enriched[$i]: name="${p.name}", challengesSent=${p.challengesSent}');
+      }
+
       return enrichedSession;
     }
 
-    AppLogger.info('[ApiService] Parsed players: ${session.players.map((p) => "${p.name} (${p.id})").join(", ")}');
+    AppLogger.info('[ApiService] 🔍 NO ENRICHMENT - Returning session as-is');
 
     return session;
   }
@@ -334,6 +347,10 @@ class ApiService {
         enrichedPlayers.add(fullPlayer.copyWith(
           color: minimalPlayer.color,
           isHost: isHost,
+          role: minimalPlayer.role ?? fullPlayer.role,
+          challengesSent: minimalPlayer.challengesSent,
+          hasDrawn: minimalPlayer.hasDrawn,
+          hasGuessed: minimalPlayer.hasGuessed,
         ));
 
         AppLogger.info('[ApiService] Enriched player: ${fullPlayer.name} (ID: ${fullPlayer.id})');
@@ -514,13 +531,25 @@ class ApiService {
       },
     );
     _handleResponse(response);
-    
+
     final data = jsonDecode(response.body);
-    final imageUrl = data['image_url'] ?? data['imageUrl'];
-    if (imageUrl == null) {
-      throw Exception('URL d\'image manquante dans la réponse');
+    AppLogger.info('[ApiService] Réponse génération image: $data');
+
+    // Essayer différents formats possibles
+    final imageUrl = data['image_url'] ??
+                     data['imageUrl'] ??
+                     data['url'] ??
+                     (data['challenge'] != null ? data['challenge']['image_url'] : null) ??
+                     (data['challenge'] != null ? data['challenge']['imageUrl'] : null);
+
+    if (imageUrl != null && imageUrl.toString().isNotEmpty) {
+      return imageUrl.toString();
     }
-    return imageUrl;
+
+    // Si l'URL n'est pas dans la réponse immédiate, retourner une chaîne vide
+    // L'image sera récupérée lors du prochain rafraîchissement du challenge
+    AppLogger.warning('[ApiService] URL d\'image non trouvée dans la réponse immédiate, sera récupérée au prochain refresh');
+    return '';
   }
 
   /// Liste tous les challenges d'une session (mode finished)

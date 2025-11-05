@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
 import '../services/game_facade.dart';
+import '../utils/logger.dart';
 import 'game_screen.dart';
 
 /// Écran de création des challenges avant le début du jeu
@@ -403,6 +404,12 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     if (_formKey.currentState?.validate() == true) {
       try {
         final gameService = widget.gameFacade;
+        final gameSessionId = gameService.currentGameSession!.id;
+
+        // Afficher le dialog d'attente AVANT l'envoi
+        if (mounted) {
+          _showWaitingDialog();
+        }
 
         // Envoyer chaque challenge à l'API (3 challenges)
         for (int i = 0; i < 3; i++) {
@@ -414,7 +421,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           ];
 
           await gameService.sendChallenge(
-            gameService.currentGameSession!.id, // gameSessionId
+            gameSessionId,              // gameSessionId
             _articles1[i],              // "Un" ou "Une"
             controllers[0].text.trim(), // input1 (objet)
             _prepositions[i],           // "Sur" ou "Dans"
@@ -424,10 +431,12 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           );
         }
 
+        // Rafraîchir la session immédiatement après l'envoi
+        await gameService.refreshGameSession(gameSessionId);
+
         // Attendre que tous les joueurs aient envoyé leurs challenges
         // Le backend passe de "challenge" à "playing" automatiquement
         if (mounted) {
-          _showWaitingDialog();
           await _waitForGameToStart(gameService);
         }
 
@@ -464,6 +473,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   }
 
   void _showWaitingDialog() {
+    AppLogger.info('[ChallengeCreation] 📱 Showing waiting dialog');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -472,6 +482,8 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
   }
 
   Future<void> _waitForGameToStart(GameFacade gameFacade) async {
+    AppLogger.info('[ChallengeCreation] 🎬 Starting to wait for game to start');
+
     // Écouter le stream du statut pour une redirection temps-réel
     const maxWaitTime = Duration(minutes: 5);
     final startTime = DateTime.now();
@@ -482,7 +494,10 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     // Écouter le stream du status
     late final StreamSubscription<String> statusSubscription;
     statusSubscription = gameFacade.statusStream.listen((status) {
-      if (status == 'playing' && !completer.isCompleted) {
+      AppLogger.info('[ChallengeCreation] 🔔 Status stream received: $status');
+      // Le backend peut envoyer "playing" OU "drawing" pour indiquer que le jeu a commencé
+      if ((status == 'playing' || status == 'drawing') && !completer.isCompleted) {
+        AppLogger.success('[ChallengeCreation] ✅ Status is "$status", completing future');
         completer.complete();
         statusSubscription.cancel();
       }
@@ -492,13 +507,25 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     // ignore: unused_local_variable
     final pollingFuture = Future(() async {
       const pollInterval = Duration(seconds: 2);
+      int pollCount = 0;
+
       while (!completer.isCompleted) {
         try {
+          pollCount++;
+          AppLogger.info('[ChallengeCreation] 🔄 Polling #$pollCount - Refreshing session...');
+
           await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
+
+          final session = gameFacade.currentGameSession;
+          if (session != null) {
+            final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
+            AppLogger.info('[ChallengeCreation] 🔄 Poll #$pollCount - Status: ${session.status}, Players ready: $playersReady/${session.players.length}');
+          }
 
           // Vérifier timeout
           if (DateTime.now().difference(startTime) > maxWaitTime) {
             if (!completer.isCompleted) {
+              AppLogger.error('[ChallengeCreation] ⏱️ Timeout after 5 minutes', null);
               completer.completeError(
                 Exception('Timeout: Le jeu n\'a pas démarré après 5 minutes')
               );
@@ -508,10 +535,13 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
 
           await Future.delayed(pollInterval);
         } catch (e) {
+          AppLogger.error('[ChallengeCreation] Polling error', e);
           // Ignorer les erreurs transitoires
           await Future.delayed(pollInterval);
         }
       }
+
+      AppLogger.info('[ChallengeCreation] 🏁 Polling stopped after $pollCount polls');
     });
 
     try {
@@ -535,6 +565,8 @@ class _WaitingDialog extends StatefulWidget {
 
 class _WaitingDialogState extends State<_WaitingDialog> {
   int _totalPlayers = 4;
+  int _playersReady = 1; // Le joueur actuel est déjà prêt
+  bool _isSubmitting = true; // Indicateur d'envoi en cours
 
   @override
   void initState() {
@@ -543,27 +575,52 @@ class _WaitingDialogState extends State<_WaitingDialog> {
   }
 
   Future<void> _updateProgress() async {
+    // Marquer l'envoi comme terminé après un court délai
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
+
     while (mounted) {
       try {
-        // Récupérer la session
+        // Récupérer la session pour avoir le statut en temps réel
         await widget.gameFacade.refreshGameSession(
           widget.gameFacade.currentGameSession!.id,
         );
 
         final session = widget.gameFacade.currentGameSession;
         if (session != null) {
-          // Mettre à jour le nombre total de joueurs
           final playerCount = session.players.length;
 
-          // L'API listSessionChallenges() ne fonctionne qu'en mode "finished"
-          // Donc on affiche simplement un indicateur d'attente et le nombre
-          // de joueurs restants. Le backend change le status à "playing"
-          // automatiquement quand tous les joueurs ont fini.
+          AppLogger.log('[WaitingDialog] Session status: ${session.status}');
+          AppLogger.log('[WaitingDialog] Total players: $playerCount');
+
+          // Compter combien de joueurs ont envoyé leurs 3 challenges
+          for (int i = 0; i < session.players.length; i++) {
+            final p = session.players[i];
+            AppLogger.log('[WaitingDialog] Player[$i]: ${p.name} (${p.id}), challengesSent=${p.challengesSent}');
+          }
+
+          final playersWithChallenges = session.players
+              .where((p) => p.challengesSent >= 3)
+              .length;
+
+          AppLogger.log('[WaitingDialog] Players with 3+ challenges: $playersWithChallenges/$playerCount');
 
           if (mounted) {
             setState(() {
               _totalPlayers = playerCount;
+              _playersReady = playersWithChallenges;
+              AppLogger.info('[WaitingDialog] 🎨 setState called - UI will show: $_playersReady/$_totalPlayers');
             });
+          }
+
+          // Si tous les joueurs sont prêts, arrêter le polling
+          // (le stream statusStream dans _waitForGameToStart s'en chargera)
+          if (_playersReady >= _totalPlayers) {
+            break;
           }
         }
 
@@ -576,76 +633,152 @@ class _WaitingDialogState extends State<_WaitingDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final progress = _totalPlayers > 0 ? _playersReady / _totalPlayers : 0.0;
+    final playersWaiting = _totalPlayers - _playersReady;
+
+    AppLogger.log('[WaitingDialog] 🎨 build() called - _playersReady=$_playersReady, _totalPlayers=$_totalPlayers, _isSubmitting=$_isSubmitting');
+
     return AlertDialog(
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Indicateur de progression circulaire indéterminé
+          // Indicateur de progression circulaire avec pourcentage
           SizedBox(
-            width: 120,
-            height: 120,
+            width: 140,
+            height: 140,
             child: Stack(
               alignment: Alignment.center,
               children: [
+                // Progression circulaire
                 SizedBox(
-                  width: 120,
-                  height: 120,
+                  width: 140,
+                  height: 140,
                   child: CircularProgressIndicator(
-                    strokeWidth: 10,
+                    value: _isSubmitting ? null : progress,
+                    strokeWidth: 12,
                     valueColor: AlwaysStoppedAnimation<Color>(
                       AppTheme.primaryColor,
                     ),
+                    backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
                   ),
                 ),
+                // Contenu au centre
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.hourglass_empty,
-                      size: 40,
-                      color: AppTheme.primaryColor,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${_totalPlayers - 1}',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    if (_isSubmitting) ...[
+                      Icon(
+                        Icons.upload,
+                        size: 40,
+                        color: AppTheme.primaryColor,
                       ),
-                    ),
-                    Text(
-                      'joueur(s)',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
+                      const SizedBox(height: 4),
+                      Text(
+                        'Envoi...',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      Icon(
+                        Icons.check_circle,
+                        size: 40,
+                        color: AppTheme.accentColor,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '$_playersReady/$_totalPlayers',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                      Text(
+                        'joueurs',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
           const SizedBox(height: 24),
-          Text(
-            'Vos challenges sont créés !',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: AppTheme.accentColor,
-              fontWeight: FontWeight.w600,
+
+          // Message de statut
+          if (_isSubmitting) ...[
+            Text(
+              'Envoi de vos challenges...',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: AppTheme.primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'En attente de ${_totalPlayers - 1} autre(s) joueur(s)...',
-            style: Theme.of(context).textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'La partie démarre automatiquement quand tous les joueurs auront fini',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppTheme.textSecondary,
+          ] else ...[
+            Text(
+              'Vos challenges sont créés !',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: AppTheme.accentColor,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
+            const SizedBox(height: 12),
+
+            // Affichage des joueurs en attente
+            if (playersWaiting > 0) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.hourglass_empty,
+                    size: 20,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'En attente de $playersWaiting joueur${playersWaiting > 1 ? 's' : ''}...',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.celebration,
+                    size: 20,
+                    color: AppTheme.accentColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tous les joueurs sont prêts !',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            Text(
+              'La partie démarre automatiquement...',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppTheme.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
       ),
     );

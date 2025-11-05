@@ -96,6 +96,12 @@ class GameFacade {
   /// Stream du statut du jeu
   Stream<String> get statusStream => gameState.statusStream;
 
+  /// Stream de la phase du jeu (drawing/guessing)
+  Stream<String?> get phaseStream => gameState.phaseStream;
+
+  /// Phase actuelle (drawing/guessing)
+  String? get currentPhase => gameState.currentPhase;
+
   /// Stream des challenges
   final StreamController<List<Challenge>> _challengesController = StreamController<List<Challenge>>.broadcast();
   Stream<List<Challenge>> get challengesStream => _challengesController.stream;
@@ -390,15 +396,6 @@ class GameFacade {
   /// Récupère le rôle du joueur actuel
   String? getCurrentPlayerRole() {
     return role.getCurrentPlayerRole(_currentPlayer, _currentGameSession);
-  }
-
-  /// Inverse les rôles de tous les joueurs
-  /// Note: L'inversion des rôles est gérée côté backend lors de la résolution des challenges.
-  /// Cette méthode rafraîchit simplement la session pour obtenir les rôles mis à jour.
-  Future<void> switchAllRoles() async {
-    if (_currentGameSession != null) {
-      await refreshGameSession(_currentGameSession!.id);
-    }
   }
 
   // --- Game State ---

@@ -1,4 +1,5 @@
 import 'player.dart';
+import '../utils/logger.dart';
 
 /// Modèle pour une session de jeu
 class GameSession {
@@ -25,6 +26,11 @@ class GameSession {
   });
 
   factory GameSession.fromJson(Map<String, dynamic> json) {
+    AppLogger.log('[GameSession] Parsing raw JSON keys: ${json.keys.toList()}');
+    AppLogger.log('[GameSession] red_team type: ${json['red_team']?.runtimeType}');
+    AppLogger.log('[GameSession] blue_team type: ${json['blue_team']?.runtimeType}');
+    AppLogger.log('[GameSession] players type: ${json['players']?.runtimeType}');
+
     // Parser les scores d'équipe
     Map<String, int> scores = {"red": 100, "blue": 100};
     if (json['teamScores'] != null && json['teamScores'] is Map) {
@@ -37,34 +43,117 @@ class GameSession {
 
     // Parser les joueurs depuis le format standard OU depuis red_team/blue_team
     List<Player> players = [];
+    AppLogger.log('[GameSession] Starting player parsing...');
 
     if (json['players'] != null) {
       // Format standard avec champ "players"
       players = (json['players'] as List<dynamic>)
-          .map((playerJson) => Player.fromJson(playerJson))
+          .map((playerJson) {
+            // Support pour format avec player_id au lieu de id
+            if (playerJson is Map<String, dynamic> && playerJson['player_id'] != null && playerJson['id'] == null) {
+              playerJson = {...playerJson, 'id': playerJson['player_id']};
+            }
+            return Player.fromJson(playerJson);
+          })
           .toList();
     } else if (json['red_team'] != null || json['blue_team'] != null) {
-      // Format alternatif avec red_team/blue_team (liste d'IDs seulement)
-      // Note: Les détails complets des joueurs seront ajoutés par getGameSession()
-      final redTeamIds = (json['red_team'] as List<dynamic>?) ?? [];
-      final blueTeamIds = (json['blue_team'] as List<dynamic>?) ?? [];
+      // Format alternatif avec red_team/blue_team
+      final redTeam = json['red_team'] as List<dynamic>? ?? [];
+      final blueTeam = json['blue_team'] as List<dynamic>? ?? [];
 
-      // Créer des objets Player minimaux avec juste l'ID et la couleur
-      // Ces Players seront enrichis plus tard avec les vraies données
-      for (final playerId in redTeamIds) {
-        players.add(Player(
-          id: playerId.toString(),
-          name: '', // Sera rempli par enrichissement
-          color: 'red',
-        ));
+      AppLogger.log('[GameSession] red_team length: ${redTeam.length}');
+      AppLogger.log('[GameSession] blue_team length: ${blueTeam.length}');
+
+      // Parser red_team (peut être liste d'IDs ou liste d'objets)
+      for (int i = 0; i < redTeam.length; i++) {
+        final teamMember = redTeam[i];
+        AppLogger.log('[GameSession] red_team[$i] type: ${teamMember.runtimeType}');
+
+        if (teamMember is Map<String, dynamic>) {
+          // Format objet avec détails
+          AppLogger.log('[GameSession] red_team[$i] keys: ${teamMember.keys.toList()}');
+          AppLogger.log('[GameSession] red_team[$i] challenges_sent: ${teamMember['challenges_sent']}');
+
+          final playerData = {...teamMember};
+          if (playerData['player_id'] != null && playerData['id'] == null) {
+            playerData['id'] = playerData['player_id'];
+          }
+          playerData['color'] = 'red';
+          final player = Player.fromJson(playerData);
+          AppLogger.log('[GameSession] Parsed red player: ${player.name}, challengesSent=${player.challengesSent}');
+          players.add(player);
+        } else {
+          // Format ID simple
+          AppLogger.log('[GameSession] red_team[$i] is simple ID: $teamMember');
+          players.add(Player(
+            id: teamMember.toString(),
+            name: '', // Sera rempli par enrichissement
+            color: 'red',
+          ));
+        }
       }
-      for (final playerId in blueTeamIds) {
-        players.add(Player(
-          id: playerId.toString(),
-          name: '', // Sera rempli par enrichissement
-          color: 'blue',
-        ));
+
+      // Parser blue_team
+      for (int i = 0; i < blueTeam.length; i++) {
+        final teamMember = blueTeam[i];
+        AppLogger.log('[GameSession] blue_team[$i] type: ${teamMember.runtimeType}');
+
+        if (teamMember is Map<String, dynamic>) {
+          // Format objet avec détails
+          AppLogger.log('[GameSession] blue_team[$i] keys: ${teamMember.keys.toList()}');
+          AppLogger.log('[GameSession] blue_team[$i] challenges_sent: ${teamMember['challenges_sent']}');
+
+          final playerData = {...teamMember};
+          if (playerData['player_id'] != null && playerData['id'] == null) {
+            playerData['id'] = playerData['player_id'];
+          }
+          playerData['color'] = 'blue';
+          final player = Player.fromJson(playerData);
+          AppLogger.log('[GameSession] Parsed blue player: ${player.name}, challengesSent=${player.challengesSent}');
+          players.add(player);
+        } else {
+          // Format ID simple
+          AppLogger.log('[GameSession] blue_team[$i] is simple ID: $teamMember');
+          players.add(Player(
+            id: teamMember.toString(),
+            name: '', // Sera rempli par enrichissement
+            color: 'blue',
+          ));
+        }
       }
+    }
+
+    // ⚡ CALCUL DES CHALLENGES ENVOYÉS
+    // Le backend ne renvoie pas challengesSent directement
+    // Il faut compter dans la liste "challenges" combien de fois chaque joueur est "challenger_id"
+    if (json['challenges'] != null && json['challenges'] is List) {
+      final challenges = json['challenges'] as List<dynamic>;
+      AppLogger.log('[GameSession] 🎯 Calculating challengesSent from ${challenges.length} challenges');
+
+      // Compter les challenges par joueur
+      final Map<String, int> challengesCount = {};
+      for (final challenge in challenges) {
+        if (challenge is Map<String, dynamic>) {
+          final challengerId = challenge['challenger_id']?.toString();
+          if (challengerId != null) {
+            challengesCount[challengerId] = (challengesCount[challengerId] ?? 0) + 1;
+          }
+        }
+      }
+
+      AppLogger.log('[GameSession] 🎯 Challenges count by player: $challengesCount');
+
+      // Mettre à jour les joueurs avec le bon nombre de challenges
+      players = players.map((p) {
+        final count = challengesCount[p.id] ?? 0;
+        AppLogger.log('[GameSession] 🎯 Player ${p.id} (${p.name}): $count challenges');
+        return p.copyWith(challengesSent: count);
+      }).toList();
+    }
+
+    AppLogger.log('[GameSession] Total players parsed: ${players.length}');
+    for (final p in players) {
+      AppLogger.log('[GameSession] Player: ${p.name} (${p.id}), color=${p.color}, challengesSent=${p.challengesSent}');
     }
 
     return GameSession(

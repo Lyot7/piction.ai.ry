@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Modèle pour un challenge
 /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]"
 class Challenge {
@@ -44,38 +46,63 @@ class Challenge {
   });
 
   factory Challenge.fromJson(Map<String, dynamic> json) {
-    // Construire la liste des mots interdits à partir de third_word, fourth_word, fifth_word
+    // Backend format:
+    // first_word = article1, second_word = input1, third_word = preposition,
+    // fourth_word = article2, fifth_word = input2
+    // forbidden_words = liste des 3 mots interdits
     final List<String> forbidden = [];
-    if (json['third_word'] != null && json['third_word'].toString().isNotEmpty) {
-      forbidden.add(json['third_word'].toString());
-    }
-    if (json['fourth_word'] != null && json['fourth_word'].toString().isNotEmpty) {
-      forbidden.add(json['fourth_word'].toString());
-    }
-    if (json['fifth_word'] != null && json['fifth_word'].toString().isNotEmpty) {
-      forbidden.add(json['fifth_word'].toString());
+    if (json['forbidden_words'] != null) {
+      if (json['forbidden_words'] is List) {
+        // Si c'est une liste, on la parse
+        forbidden.addAll(
+          (json['forbidden_words'] as List<dynamic>)
+              .map((word) => word.toString())
+              .toList()
+        );
+      } else if (json['forbidden_words'] is String) {
+        // Si c'est une string (possiblement JSON), essayer de la parser
+        final stringValue = json['forbidden_words'].toString();
+        try {
+          // Tenter de parser comme JSON
+          final dynamic parsed = jsonDecode(stringValue);
+          if (parsed is List) {
+            forbidden.addAll(
+              parsed
+                  .map((word) => word.toString())
+                  .toList()
+            );
+          } else {
+            forbidden.add(stringValue);
+          }
+        } catch (e) {
+          // Si ce n'est pas du JSON valide, ajouter tel quel
+          forbidden.add(stringValue);
+        }
+      }
     }
 
-    // Fallback vers forbidden_words si disponible
-    if (forbidden.isEmpty && json['forbidden_words'] != null) {
-      forbidden.addAll(
-        (json['forbidden_words'] as List<dynamic>)
-            .map((word) => word.toString())
-            .toList()
-      );
-    }
+    // Log pour debug: voir ce que contient le JSON
+    final challengeId = (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString();
+    final imageUrl = json['imageUrl'] ?? json['image_url'] ?? json['image_path'];
+
+    // Log toutes les clés possibles pour l'image
+    print('[Challenge.fromJson] Challenge ID: $challengeId');
+    print('[Challenge.fromJson] imageUrl field: ${json['imageUrl']}');
+    print('[Challenge.fromJson] image_url field: ${json['image_url']}');
+    print('[Challenge.fromJson] image_path field: ${json['image_path']}');
+    print('[Challenge.fromJson] Final imageUrl: $imageUrl');
 
     return Challenge(
-      id: (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString(),
+      id: challengeId,
       gameSessionId: (json['gameSessionId'] ?? '').toString(),
-      article1: json['article1'] ?? json['article_1'] ?? 'Un',
-      input1: json['input1'] ?? json['input_1'] ?? json['first_word'] ?? '',
-      preposition: json['preposition'] ?? 'Sur',
-      article2: json['article2'] ?? json['article_2'] ?? 'Une',
-      input2: json['input2'] ?? json['input_2'] ?? json['second_word'] ?? '',
+      article1: json['article1'] ?? json['article_1'] ?? json['first_word'] ?? 'Un',
+      input1: json['input1'] ?? json['input_1'] ?? json['second_word'] ?? '',
+      preposition: json['preposition'] ?? json['third_word'] ?? 'Sur',
+      article2: json['article2'] ?? json['article_2'] ?? json['fourth_word'] ?? 'Une',
+      input2: json['input2'] ?? json['input_2'] ?? json['fifth_word'] ?? '',
       forbiddenWords: forbidden,
       prompt: json['prompt'],
-      imageUrl: json['imageUrl'] ?? json['image_url'],
+      imageUrl: imageUrl,
       answer: json['answer'],
       isResolved: json['is_resolved'] ?? json['isResolved'],
       drawerId: (json['drawerId'] ?? json['drawer_id'] ?? '').toString(),
@@ -94,16 +121,15 @@ class Challenge {
     return {
       'id': id,
       'gameSessionId': gameSessionId,
-      'article1': article1,
-      'first_word': input1,
-      'preposition': preposition,
-      'article2': article2,
-      'second_word': input2,
-      if (forbiddenWords.isNotEmpty) 'third_word': forbiddenWords[0],
-      if (forbiddenWords.length > 1) 'fourth_word': forbiddenWords[1],
-      if (forbiddenWords.length > 2) 'fifth_word': forbiddenWords[2],
+      // Format backend: first_word=article1, second_word=input1, etc.
+      'first_word': article1,
+      'second_word': input1,
+      'third_word': preposition,
+      'fourth_word': article2,
+      'fifth_word': input2,
+      'forbidden_words': forbiddenWords,
       if (prompt != null) 'prompt': prompt,
-      if (imageUrl != null) 'imageUrl': imageUrl,
+      if (imageUrl != null) 'image_path': imageUrl,  // Backend uses image_path
       if (answer != null) 'answer': answer,
       if (isResolved != null) 'is_resolved': isResolved,
       if (drawerId != null) 'drawerId': drawerId,

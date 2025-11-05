@@ -1,10 +1,18 @@
 import '../models/game_session.dart';
 import '../models/player.dart';
-import '../utils/logger.dart';
 import '../utils/role_assignment.dart';
 
 /// Manager pour la gestion des rôles (drawer/guesser)
 /// Principe SOLID: Single Responsibility - Uniquement les rôles
+///
+/// **IMPORTANT**: Les rôles sont attribués UNE SEULE FOIS au début du jeu
+/// et ne changent JAMAIS pendant la partie (flow simplifié avec 1 cycle unique).
+///
+/// Flow simplifié:
+/// 1. Attribution initiale des rôles (1er joueur de chaque équipe = drawer, 2ème = guesser)
+/// 2. Phase drawing: TOUS les drawers dessinent EN MÊME TEMPS
+/// 3. Phase guessing: TOUS les guessers devinent EN MÊME TEMPS
+/// 4. Jeu terminé (pas de cycles supplémentaires, pas d'inversion)
 class RoleManager {
   /// Retourne le rôle actuel du joueur courant
   String? getCurrentPlayerRole(Player? currentPlayer, GameSession? currentSession) {
@@ -15,26 +23,6 @@ class RoleManager {
         .firstOrNull;
 
     return player?.role;
-  }
-
-  /// Vérifie si c'est le tour du joueur actuel
-  bool isMyTurn(Player? currentPlayer, GameSession? currentSession) {
-    if (currentPlayer == null || currentSession == null) return false;
-
-    final player = currentSession.players
-        .where((p) => p.id == currentPlayer.id)
-        .firstOrNull;
-
-    // C'est le tour du joueur s'il est drawer
-    return player?.isDrawer ?? false;
-  }
-
-  /// Inverse les rôles de tous les joueurs (drawer <-> guesser)
-  /// Note: L'inversion réelle est gérée par le backend
-  Future<void> switchAllRoles() async {
-    // Cette méthode peut être utilisée pour notifier le backend
-    // si nécessaire dans le futur
-    AppLogger.info('[RoleManager] Inversion des rôles demandée');
   }
 
   /// Détermine le rôle d'un joueur spécifique dans une session

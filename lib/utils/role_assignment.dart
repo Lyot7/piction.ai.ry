@@ -86,9 +86,15 @@ class RoleAssignment {
     return true;
   }
 
-  /// Inverse les rôles de tous les joueurs (drawer <-> guesser)
+  /// ⚠️ DEPRECATED - NE PAS UTILISER
+  ///
+  /// Cette fonction n'est plus nécessaire car le jeu fonctionne avec un seul cycle
+  /// et les rôles ne changent JAMAIS pendant la partie (flow simplifié).
+  ///
+  /// @deprecated Inutile avec le flow simplifié (1 cycle unique, pas d'inversion)
+  @Deprecated('Roles ne changent pas pendant la partie - flow simplifié')
   static GameSession switchAllRoles(GameSession session) {
-    AppLogger.info('[RoleAssignment] Inversion des rôles de tous les joueurs');
+    AppLogger.warning('[RoleAssignment] ⚠️ switchAllRoles() called but DEPRECATED - roles should NOT change');
 
     final updatedPlayers = session.players.map((player) {
       return player.toggleRole();
@@ -96,7 +102,6 @@ class RoleAssignment {
 
     final updatedSession = session.copyWith(players: updatedPlayers);
 
-    AppLogger.success('[RoleAssignment] Rôles inversés avec succès');
     return updatedSession;
   }
 }

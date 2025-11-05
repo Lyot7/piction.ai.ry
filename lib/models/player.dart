@@ -28,10 +28,10 @@ class Player {
       name: json['name'] ?? '',
       color: json['color'],
       role: json['role'],
-      isHost: json['isHost'] ?? false,
-      challengesSent: json['challengesSent'] ?? 0,
-      hasDrawn: json['hasDrawn'] ?? false,
-      hasGuessed: json['hasGuessed'] ?? false,
+      isHost: json['isHost'] ?? json['is_host'] ?? false,
+      challengesSent: json['challengesSent'] ?? json['challenges_sent'] ?? 0,
+      hasDrawn: json['hasDrawn'] ?? json['has_drawn'] ?? false,
+      hasGuessed: json['hasGuessed'] ?? json['has_guessed'] ?? false,
     );
   }
 
@@ -70,7 +70,13 @@ class Player {
     );
   }
 
-  /// Inverse le rôle du joueur (drawer <-> guesser)
+  /// ⚠️ DEPRECATED - NE PAS UTILISER
+  ///
+  /// Cette méthode n'est plus nécessaire car les rôles ne changent JAMAIS
+  /// pendant la partie (flow simplifié avec 1 cycle unique).
+  ///
+  /// @deprecated Roles fixes pendant toute la partie - pas d'inversion
+  @Deprecated('Roles ne changent pas pendant la partie - flow simplifié')
   Player toggleRole() {
     String? newRole;
     if (role == 'drawer') {

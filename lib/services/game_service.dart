@@ -711,16 +711,6 @@ class GameService {
     return _currentGameSession?.gamePhase == 'guessing';
   }
 
-  /// Vérifie si c'est le tour du joueur actuel
-  /// En phase de dessination: tout le monde dessine
-  /// En phase de devination: tout le monde devine
-  bool isMyTurn() {
-    if (_currentPlayer == null || _currentGameSession == null) return false;
-
-    // Pendant les 2 phases, tous les joueurs participent simultanément
-    return _currentStatus == 'playing';
-  }
-
   // ===== UTILITAIRES =====
 
   /// Vérifie si l'utilisateur est connecté

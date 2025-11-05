@@ -12,27 +12,24 @@ import 'results_screen.dart';
 class GameScreen extends StatefulWidget {
   final GameFacade gameFacade;
 
-  const GameScreen({
-    super.key,
-    required this.gameFacade,
-  });
+  const GameScreen({super.key, required this.gameFacade});
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> {
-
   // Timer de 5 minutes
   static const int totalSeconds = 5 * 60;
   Timer? _timer;
+  Timer? _refreshTimer;
   int _remaining = totalSeconds;
 
   // État du jeu
   List<models.Challenge> _challenges = [];
-  int _currentChallengeIndex = 0;
   bool _isLoading = true;
   String? _errorMessage;
+  bool _isAutoGenerating = false;
 
   // Scores par équipe
   int _redTeamScore = 100;
@@ -47,6 +44,7 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -54,34 +52,23 @@ class _GameScreenState extends State<GameScreen> {
     try {
       setState(() => _isLoading = true);
 
-      // Déterminer la phase de jeu et le rôle du joueur
+      // Déterminer la phase de jeu
       final gameSession = widget.gameFacade.currentGameSession;
       final gamePhase = gameSession?.gamePhase ?? 'drawing';
-      final role = widget.gameFacade.getCurrentPlayerRole();
 
-      AppLogger.info('[GameScreen] Phase: $gamePhase, Rôle: $role');
+      AppLogger.info('[GameScreen] Phase: $gamePhase');
 
-      // Récupérer les challenges en fonction de la phase et du rôle
-      // Phase DRAWING: Drawer dessine, Guesser attend
-      // Phase GUESSING: Drawer attend, Guesser devine
+      // Récupérer les challenges en fonction de la phase
+      // Phase DRAWING: TOUS les joueurs dessinent leurs 3 challenges
+      // Phase GUESSING: TOUS les joueurs devinent les dessins de leur coéquipier
       if (gamePhase == 'drawing') {
-        if (role == 'drawer') {
-          // Le drawer génère des images pour ses challenges
-          await widget.gameFacade.refreshMyChallenges();
-          _challenges = widget.gameFacade.myChallenges;
-        } else {
-          // Le guesser attend pendant la phase de dessination
-          _challenges = [];
-        }
+        // ✅ TOUS les joueurs (peu importe le rôle) dessinent leurs 3 challenges
+        await widget.gameFacade.refreshMyChallenges();
+        _challenges = widget.gameFacade.myChallenges;
       } else if (gamePhase == 'guessing') {
-        if (role == 'guesser') {
-          // Le guesser devine les images de son coéquipier
-          await widget.gameFacade.refreshChallengesToGuess();
-          _challenges = widget.gameFacade.challengesToGuess;
-        } else {
-          // Le drawer attend pendant la phase de devination
-          _challenges = [];
-        }
+        // ✅ TOUS les joueurs (peu importe le rôle) devinent les dessins de leur coéquipier
+        await widget.gameFacade.refreshChallengesToGuess();
+        _challenges = widget.gameFacade.challengesToGuess;
       }
 
       AppLogger.info('[GameScreen] ${_challenges.length} challenges chargés');
@@ -112,6 +99,46 @@ class _GameScreenState extends State<GameScreen> {
         });
       }
     });
+
+    // Démarrer aussi le timer de rafraîchissement des challenges (toutes les 3 secondes)
+    _startRefreshTimer();
+  }
+
+  void _startRefreshTimer() {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      await _refreshChallenges();
+    });
+  }
+
+  Future<void> _refreshChallenges() async {
+    try {
+      final gameSession = widget.gameFacade.currentGameSession;
+      if (gameSession == null) return;
+
+      final gamePhase = gameSession.gamePhase ?? 'drawing';
+
+      if (gamePhase == 'drawing') {
+        await widget.gameFacade.refreshMyChallenges();
+        if (mounted) {
+          setState(() {
+            _challenges = widget.gameFacade.myChallenges;
+            // Log pour debug: afficher les imageUrl des challenges récupérés
+            for (var challenge in _challenges) {
+              AppLogger.info('[GameScreen] Challenge ${challenge.id} - imageUrl: ${challenge.imageUrl}');
+            }
+          });
+        }
+      } else if (gamePhase == 'guessing') {
+        await widget.gameFacade.refreshChallengesToGuess();
+        if (mounted) {
+          setState(() {
+            _challenges = widget.gameFacade.challengesToGuess;
+          });
+        }
+      }
+    } catch (e) {
+      AppLogger.error('[GameScreen] Erreur rafraîchissement challenges', e);
+    }
   }
 
   void _endGame() {
@@ -129,16 +156,6 @@ class _GameScreenState extends State<GameScreen> {
         },
       ),
     );
-  }
-
-  void _nextChallenge() {
-    if (_currentChallengeIndex < _challenges.length - 1) {
-      setState(() {
-        _currentChallengeIndex++;
-      });
-    } else {
-      _endGame();
-    }
   }
 
   void _applyScoreDelta(int delta) {
@@ -198,7 +215,6 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    final role = widget.gameFacade.getCurrentPlayerRole();
     final gameSession = widget.gameFacade.currentGameSession;
     final gamePhase = gameSession?.gamePhase ?? 'drawing';
 
@@ -206,7 +222,9 @@ class _GameScreenState extends State<GameScreen> {
     if (_challenges.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('Phase: ${gamePhase == 'drawing' ? 'Dessination' : 'Devination'}'),
+          title: Text(
+            'Phase: ${gamePhase == 'drawing' ? 'Dessination' : 'Devination'}',
+          ),
           backgroundColor: AppTheme.primaryColor,
           foregroundColor: Colors.white,
         ),
@@ -233,9 +251,8 @@ class _GameScreenState extends State<GameScreen> {
                               ? 'En attente...\nVotre coéquipier dessine les challenges'
                               : 'En attente...\nVotre coéquipier devine les challenges',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                color: Colors.grey[600],
-                              ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(color: Colors.grey[600]),
                         ),
                       ],
                     ),
@@ -248,38 +265,10 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    final currentChallenge = _challenges[_currentChallengeIndex];
-
-    // Déterminer la vue à afficher en fonction de la phase et du rôle
-    Widget contentView;
-    String title;
-
-    if (gamePhase == 'drawing' && role == 'drawer') {
-      // Phase de dessination - Drawer dessine
-      contentView = _DrawerView(
-        challenge: currentChallenge,
-        gameFacade: widget.gameFacade,
-        onImageGenerated: () => setState(() {}),
-        onScoreDelta: _applyScoreDelta,
-        onChallengeComplete: _nextChallenge,
-      );
-      title = 'Dessinateur';
-    } else if (gamePhase == 'guessing' && role == 'guesser') {
-      // Phase de devination - Guesser devine
-      contentView = _GuesserView(
-        challenge: currentChallenge,
-        gameFacade: widget.gameFacade,
-        onScoreDelta: _applyScoreDelta,
-        onChallengeComplete: _nextChallenge,
-      );
-      title = 'Devineur';
-    } else {
-      // Cas par défaut (ne devrait pas arriver)
-      contentView = Center(
-        child: Text('Erreur de synchronisation'),
-      );
-      title = 'Erreur';
-    }
+    // Déterminer le titre en fonction de la phase
+    String title = gamePhase == 'drawing'
+        ? 'Phase Dessination'
+        : 'Phase Devination';
 
     return Scaffold(
       appBar: AppBar(
@@ -289,20 +278,65 @@ class _GameScreenState extends State<GameScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(8),
           child: Column(
             children: [
-              _buildHeader(currentChallenge),
+              _buildHeader(),
               const SizedBox(height: 12),
-              Expanded(child: contentView),
+              // Bouton auto-fill en mode drawing
+              if (gamePhase == 'drawing') ...[
+                _buildAutoFillButton(),
+                const SizedBox(height: 12),
+              ],
+              Expanded(
+                child: ListView.separated(
+                  itemCount: _challenges.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    final challenge = _challenges[index];
+
+                    // Afficher DrawerView ou GuesserView selon la phase
+                    if (gamePhase == 'drawing') {
+                      return _ChallengeCard(
+                        key: ValueKey('challenge_card_${challenge.id}'),
+                        index: index,
+                        totalChallenges: _challenges.length,
+                        child: _DrawerView(
+                          key: ValueKey('drawer_${challenge.id}'),
+                          challenge: challenge,
+                          gameFacade: widget.gameFacade,
+                          onImageGenerated: () => setState(() {}),
+                          onScoreDelta: _applyScoreDelta,
+                        ),
+                      );
+                    } else {
+                      return _ChallengeCard(
+                        key: ValueKey('challenge_card_${challenge.id}'),
+                        index: index,
+                        totalChallenges: _challenges.length,
+                        child: _GuesserView(
+                          key: ValueKey('guesser_${challenge.id}'),
+                          challenge: challenge,
+                          gameFacade: widget.gameFacade,
+                          onScoreDelta: _applyScoreDelta,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
             ],
           ),
         ),
       ),
+      bottomNavigationBar: gamePhase == 'drawing'
+          ? _buildSendAllButton()
+          : null,
     );
   }
 
-  Widget _buildHeader(models.Challenge challenge) {
+  Widget _buildHeader() {
     return Row(
       children: [
         _buildTimerChip(),
@@ -310,8 +344,6 @@ class _GameScreenState extends State<GameScreen> {
         _buildScoreChip('Rouge', _redTeamScore, AppTheme.teamRedColor),
         const SizedBox(width: 8),
         _buildScoreChip('Bleue', _blueTeamScore, AppTheme.teamBlueColor),
-        const Spacer(),
-        Text('${_currentChallengeIndex + 1}/${_challenges.length}'),
       ],
     );
   }
@@ -341,9 +373,225 @@ class _GameScreenState extends State<GameScreen> {
   Widget _buildScoreChip(String label, int score, Color color) {
     return Chip(
       avatar: CircleAvatar(backgroundColor: color, radius: 8),
-      label: Text('$label: $score'),
+      label: Text('$score pts'),
       backgroundColor: color.withValues(alpha: 0.08),
       side: BorderSide(color: color.withValues(alpha: 0.3)),
+    );
+  }
+
+  Widget _buildAutoFillButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _isAutoGenerating ? null : _autoFillAndGenerateAll,
+        icon: _isAutoGenerating
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.auto_awesome),
+        label: Text(
+          _isAutoGenerating
+              ? 'Génération automatique en cours...'
+              : 'Remplir et générer automatiquement',
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.orange,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        ),
+      ),
+    );
+  }
+
+  String _generateAutoPrompt(models.Challenge challenge) {
+    // Créer un prompt simple en anglais pour l'IA
+    // Format générique qui évite les mots interdits et les mots à deviner
+    return 'A simple illustration showing the concept, digital art style, clean background';
+  }
+
+  Future<void> _autoFillAndGenerateAll() async {
+    setState(() => _isAutoGenerating = true);
+
+    try {
+      AppLogger.info('[GameScreen] Début auto-génération pour ${_challenges.length} challenges');
+
+      for (int i = 0; i < _challenges.length; i++) {
+        final challenge = _challenges[i];
+
+        // Générer un prompt automatique
+        final autoPrompt = _generateAutoPrompt(challenge);
+
+        AppLogger.info('[GameScreen] Génération challenge ${i + 1}/${_challenges.length}: $autoPrompt');
+
+        // Rafraîchir la session pour vérifier la phase
+        final gameSession = widget.gameFacade.currentGameSession;
+        if (gameSession != null) {
+          await widget.gameFacade.refreshGameSession(gameSession.id);
+        }
+
+        final updatedSession = widget.gameFacade.currentGameSession;
+        if (updatedSession == null) {
+          throw Exception('Session de jeu non disponible');
+        }
+
+        // Utiliser 'drawing' par défaut si gamePhase est null
+        final gamePhase = updatedSession.gamePhase ?? 'drawing';
+        AppLogger.info('[GameScreen] Phase pour challenge ${i + 1}: $gamePhase');
+
+        if (gamePhase != 'drawing' && gamePhase != 'playing') {
+          throw Exception('Phase de jeu incorrecte: $gamePhase. Veuillez générer les images en phase "drawing".');
+        }
+
+        // Générer l'image
+        await StableDiffusionService.generateImageWithRetry(
+          autoPrompt,
+          updatedSession.id,
+          challenge.id,
+        );
+
+        // Attendre un peu entre chaque génération
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      // Rafraîchir les challenges pour récupérer les URLs
+      await widget.gameFacade.refreshMyChallenges();
+
+      setState(() {
+        _challenges = widget.gameFacade.myChallenges;
+        _isAutoGenerating = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Toutes les images ont été générées automatiquement !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      AppLogger.success('[GameScreen] Auto-génération terminée avec succès');
+    } catch (e) {
+      AppLogger.error('[GameScreen] Erreur auto-génération', e);
+
+      setState(() => _isAutoGenerating = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de l\'auto-génération: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildSendAllButton() {
+    // Vérifier si tous les challenges ont une image générée
+    final allImagesReady = _challenges.every(
+      (challenge) =>
+          challenge.imageUrl != null && challenge.imageUrl!.isNotEmpty,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: ElevatedButton.icon(
+          onPressed: allImagesReady ? _sendAllToGuessers : null,
+          icon: const Icon(Icons.send),
+          label: Text(
+            allImagesReady ? 'Envoyer les images' : 'Générez toutes les images',
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 50),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendAllToGuessers() async {
+    AppLogger.success('[GameScreen] Envoi de tous les dessins aux devineurs');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${_challenges.length} dessins envoyés ! En attente des autres joueurs...',
+        ),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Ici, le backend gère automatiquement la transition vers la phase guessing
+    // Pas besoin d'action supplémentaire, le polling va détecter le changement
+  }
+}
+
+/// Card wrapper pour chaque challenge avec numéro
+class _ChallengeCard extends StatelessWidget {
+  final int index;
+  final int totalChallenges;
+  final Widget child;
+
+  const _ChallengeCard({
+    super.key,
+    required this.index,
+    required this.totalChallenges,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header avec numéro du challenge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Challenge ${index + 1}/$totalChallenges',
+                style: TextStyle(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Contenu du challenge
+            child,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -354,14 +602,13 @@ class _DrawerView extends StatefulWidget {
   final GameFacade gameFacade;
   final VoidCallback onImageGenerated;
   final Function(int) onScoreDelta;
-  final VoidCallback onChallengeComplete;
 
   const _DrawerView({
+    super.key,
     required this.challenge,
     required this.gameFacade,
     required this.onImageGenerated,
     required this.onScoreDelta,
-    required this.onChallengeComplete,
   });
 
   @override
@@ -374,6 +621,38 @@ class _DrawerViewState extends State<_DrawerView> {
   bool _isGenerating = false;
   int _regenCount = 0;
   String? _promptError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialiser avec l'image existante si disponible
+    _imageUrl = widget.challenge.imageUrl;
+    if (widget.challenge.prompt != null) {
+      _promptController.text = widget.challenge.prompt!;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_DrawerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Log pour debug
+    AppLogger.info('[DrawerView] didUpdateWidget appelé - challengeId: ${widget.challenge.id}');
+    AppLogger.info('[DrawerView] oldWidget.imageUrl: ${oldWidget.challenge.imageUrl}');
+    AppLogger.info('[DrawerView] newWidget.imageUrl: ${widget.challenge.imageUrl}');
+    AppLogger.info('[DrawerView] _imageUrl actuel: $_imageUrl');
+
+    // Mettre à jour l'image si le challenge a changé
+    if (oldWidget.challenge.id != widget.challenge.id ||
+        oldWidget.challenge.imageUrl != widget.challenge.imageUrl) {
+      AppLogger.success('[DrawerView] Mise à jour de l\'image vers: ${widget.challenge.imageUrl}');
+      setState(() {
+        _imageUrl = widget.challenge.imageUrl;
+        if (widget.challenge.prompt != null && widget.challenge.prompt != _promptController.text) {
+          _promptController.text = widget.challenge.prompt!;
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -414,10 +693,27 @@ class _DrawerViewState extends State<_DrawerView> {
         throw Exception('Aucune session de jeu active');
       }
 
+      // Rafraîchir l'état de la game session pour avoir la phase à jour
+      await widget.gameFacade.refreshGameSession(gameSession.id);
+
+      // Récupérer la session mise à jour
+      final updatedSession = widget.gameFacade.currentGameSession;
+      if (updatedSession == null) {
+        throw Exception('Impossible de récupérer l\'état de la session');
+      }
+
+      // Vérifier que la session est en phase "drawing" (null = drawing par défaut)
+      final gamePhase = updatedSession.gamePhase ?? 'drawing';
+      AppLogger.info('[DrawerView] Phase actuelle avant génération: $gamePhase');
+
+      if (gamePhase != 'drawing' && gamePhase != 'playing') {
+        throw Exception('La phase de jeu ne permet plus de générer d\'images (phase: $gamePhase).\nVeuillez générer toutes les images avant que le jeu ne commence.');
+      }
+
       // Générer l'image via l'API
       final imageUrl = await StableDiffusionService.generateImageWithRetry(
         prompt,
-        gameSession.id,
+        updatedSession.id,
         widget.challenge.id,
       );
 
@@ -429,6 +725,9 @@ class _DrawerViewState extends State<_DrawerView> {
           widget.onScoreDelta(-10); // Coût de régénération
         }
       });
+
+      // Rafraîchir les challenges pour récupérer l'URL depuis le backend
+      await widget.gameFacade.refreshMyChallenges();
 
       widget.onImageGenerated();
       AppLogger.success('[DrawerView] Image générée avec succès');
@@ -448,24 +747,6 @@ class _DrawerViewState extends State<_DrawerView> {
         );
       }
     }
-  }
-
-  void _sendToGuesser() {
-    if (_imageUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vous devez d\'abord générer une image'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // Marquer le challenge comme envoyé
-    AppLogger.success('[DrawerView] Image envoyée au devineur');
-
-    // Passer au prochain challenge ou attendre le devineur
-    widget.onChallengeComplete();
   }
 
   @override
@@ -496,13 +777,46 @@ class _DrawerViewState extends State<_DrawerView> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 12),
+                // Mots interdits avec chips
+                Row(
+                  children: [
+                    Icon(Icons.block, color: AppTheme.errorColor, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Mots interdits:',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppTheme.errorColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                Text(
-                  '⚠️ Ne pas utiliser: ${widget.challenge.allForbiddenWords.join(", ")}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.errorColor,
-                    fontStyle: FontStyle.italic,
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.challenge.allForbiddenWords.map((word) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppTheme.errorColor,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Text(
+                        word,
+                        style: TextStyle(
+                          color: AppTheme.errorColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ],
             ),
@@ -529,7 +843,8 @@ class _DrawerViewState extends State<_DrawerView> {
         const SizedBox(height: 12),
 
         // Zone d'affichage de l'image
-        Expanded(
+        SizedBox(
+          height: 300, // Hauteur fixe pour le scroll
           child: _imageUrl == null
               ? Container(
                   decoration: BoxDecoration(
@@ -552,7 +867,11 @@ class _DrawerViewState extends State<_DrawerView> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.image_outlined, size: 64, color: Colors.grey[400]),
+                              Icon(
+                                Icons.image_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
                               const SizedBox(height: 16),
                               Text(
                                 'Écrivez un prompt et générez l\'image',
@@ -571,9 +890,8 @@ class _DrawerViewState extends State<_DrawerView> {
                         fit: BoxFit.cover,
                         width: double.infinity,
                         height: double.infinity,
-                        placeholder: (context, url) => const Center(
-                          child: CircularProgressIndicator(),
-                        ),
+                        placeholder: (context, url) =>
+                            const Center(child: CircularProgressIndicator()),
                         errorWidget: (context, url, error) => const Center(
                           child: Icon(Icons.broken_image, size: 48),
                         ),
@@ -587,7 +905,9 @@ class _DrawerViewState extends State<_DrawerView> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -596,36 +916,18 @@ class _DrawerViewState extends State<_DrawerView> {
         ),
         const SizedBox(height: 12),
 
-        // Boutons d'action
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _regenCount < 2 && !_isGenerating && _imageUrl != null
-                    ? () => _generateImage(isRegen: true)
-                    : null,
-                icon: const Icon(Icons.refresh),
-                label: Text('Régénérer (${2 - _regenCount})'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: ElevatedButton.icon(
-                onPressed: _imageUrl != null && !_isGenerating ? _sendToGuesser : null,
-                icon: const Icon(Icons.send),
-                label: const Text('Envoyer au devineur'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-          ],
+        // Bouton régénération
+        ElevatedButton.icon(
+          onPressed: _regenCount < 2 && !_isGenerating && _imageUrl != null
+              ? () => _generateImage(isRegen: true)
+              : null,
+          icon: const Icon(Icons.refresh),
+          label: Text('Régénérer (${2 - _regenCount})'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 44),
+          ),
         ),
       ],
     );
@@ -637,13 +939,12 @@ class _GuesserView extends StatefulWidget {
   final models.Challenge challenge;
   final GameFacade gameFacade;
   final Function(int) onScoreDelta;
-  final VoidCallback onChallengeComplete;
 
   const _GuesserView({
+    super.key,
     required this.challenge,
     required this.gameFacade,
     required this.onScoreDelta,
-    required this.onChallengeComplete,
   });
 
   @override
@@ -665,8 +966,8 @@ class _GuesserViewState extends State<_GuesserView> {
     final guessLower = guess.toLowerCase().trim();
 
     // Vérifier si la réponse contient input1 ou input2
-    return widget.challenge.targetWords.any((target) =>
-      guessLower.contains(target.toLowerCase())
+    return widget.challenge.targetWords.any(
+      (target) => guessLower.contains(target.toLowerCase()),
     );
   }
 
@@ -706,16 +1007,14 @@ class _GuesserViewState extends State<_GuesserView> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Bravo ! Réponse correcte ! 🎉'),
+              content: const Text(
+                'Bravo ! Réponse correcte ! 🎉 Passez au challenge suivant',
+              ),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
+              duration: const Duration(seconds: 3),
             ),
           );
         }
-
-        // Attendre un peu puis passer au suivant
-        await Future.delayed(const Duration(seconds: 2));
-        widget.onChallengeComplete();
       } else {
         widget.onScoreDelta(-1); // -1 point pour mauvaise réponse
 
@@ -778,7 +1077,8 @@ class _GuesserViewState extends State<_GuesserView> {
         const SizedBox(height: 16),
 
         // Zone d'affichage de l'image
-        Expanded(
+        SizedBox(
+          height: 300, // Hauteur fixe pour le scroll
           child: imageUrl == null || imageUrl.isEmpty
               ? Container(
                   decoration: BoxDecoration(
@@ -807,12 +1107,10 @@ class _GuesserViewState extends State<_GuesserView> {
                     fit: BoxFit.contain,
                     width: double.infinity,
                     height: double.infinity,
-                    placeholder: (context, url) => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                    errorWidget: (context, url, error) => const Center(
-                      child: Icon(Icons.broken_image, size: 48),
-                    ),
+                    placeholder: (context, url) =>
+                        const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) =>
+                        const Center(child: Icon(Icons.broken_image, size: 48)),
                   ),
                 ),
         ),
@@ -822,9 +1120,9 @@ class _GuesserViewState extends State<_GuesserView> {
         if (_previousGuesses.isNotEmpty) ...[
           Text(
             'Tentatives précédentes:',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppTheme.textSecondary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 4),
           Wrap(
@@ -858,7 +1156,9 @@ class _GuesserViewState extends State<_GuesserView> {
             ),
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: !_isSubmitting && imageUrl != null ? _submitGuess : null,
+              onPressed: !_isSubmitting && imageUrl != null
+                  ? _submitGuess
+                  : null,
               icon: _isSubmitting
                   ? const SizedBox(
                       width: 16,

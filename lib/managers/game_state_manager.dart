@@ -5,17 +5,37 @@ import '../utils/logger.dart';
 
 /// Manager pour la gestion des transitions d'état du jeu
 /// Principe SOLID: Single Responsibility - Uniquement les états et transitions
-/// États: lobby -> challenge -> playing -> finished
+///
+/// **Flow simplifié (1 seul cycle, pas d'inversion de rôles):**
+/// 1. lobby: Attente de 4 joueurs
+/// 2. challenge: Création des 3 challenges par joueur
+/// 3. playing/drawing: Les drawers dessinent leurs 3 challenges (1 seule fois)
+/// 4. playing/guessing: Les guessers devinent les 3 challenges (1 seule fois)
+/// 5. finished: Jeu terminé
+///
+/// **Phases pendant "playing" (gamePhase):**
+/// - drawing: Drawers dessinent (phase unique, pas de répétition)
+/// - guessing: Guessers devinent (phase unique, pas de répétition)
+///
+/// **Note:** Les rôles sont fixes pour toute la partie, pas d'inversion.
 class GameStateManager {
   final ChallengeManager _challengeManager;
 
-  // État actuel
+  // État actuel (lobby, challenge, playing, finished)
   String _currentStatus = 'lobby';
   String get currentStatus => _currentStatus;
+
+  // Phase actuelle pendant "playing" (drawing, guessing)
+  String? _currentPhase;
+  String? get currentPhase => _currentPhase;
 
   // Stream pour notifier les changements d'état
   final StreamController<String> _statusController = StreamController<String>.broadcast();
   Stream<String> get statusStream => _statusController.stream;
+
+  // Stream pour notifier les changements de phase
+  final StreamController<String?> _phaseController = StreamController<String?>.broadcast();
+  Stream<String?> get phaseStream => _phaseController.stream;
 
   GameStateManager(this._challengeManager);
 
@@ -28,29 +48,111 @@ class GameStateManager {
     }
   }
 
-  /// Vérifie et effectue les transitions automatiques d'état
-  Future<void> checkTransitions(GameSession? currentSession) async {
-    if (currentSession == null) return;
+  /// Met à jour la phase actuelle (drawing/guessing)
+  void updatePhase(String? newPhase) {
+    if (_currentPhase != newPhase) {
+      AppLogger.info('[GameStateManager] Changement de phase: $_currentPhase -> $newPhase');
+      _currentPhase = newPhase;
+      _phaseController.add(_currentPhase);
+    }
+  }
 
+  /// Vérifie et effectue les transitions automatiques d'état et de phase
+  Future<void> checkTransitions(GameSession? currentSession) async {
+    if (currentSession == null) {
+      AppLogger.warning('[GameStateManager] checkTransitions called with null session');
+      return;
+    }
+
+    AppLogger.info('[GameStateManager] 🔍 Checking transitions - Status: $_currentStatus -> ${currentSession.status}, Phase: $_currentPhase -> ${currentSession.gamePhase}');
+
+    // Log player challenge status
+    final playersReady = currentSession.players.where((p) => p.challengesSent >= 3).length;
+    AppLogger.info('[GameStateManager] 🔍 Players ready: $playersReady/${currentSession.players.length}');
+
+    // IMPORTANT: Toujours synchroniser avec le backend
+    bool statusChanged = false;
+    bool phaseChanged = false;
+
+    // Synchroniser le status
+    if (currentSession.status != _currentStatus) {
+      AppLogger.info('[GameStateManager] 🎯 Sync status: $_currentStatus -> ${currentSession.status}');
+      updateStatus(currentSession.status);
+      statusChanged = true;
+    }
+
+    // Synchroniser la phase
+    if (currentSession.gamePhase != _currentPhase) {
+      AppLogger.info('[GameStateManager] 🎯 Sync phase: $_currentPhase -> ${currentSession.gamePhase}');
+      updatePhase(currentSession.gamePhase);
+      phaseChanged = true;
+    }
+
+    // Si sync depuis backend, on s'arrête là (le backend a autorité)
+    if (statusChanged || phaseChanged) {
+      return;
+    }
+
+    // === Transitions locales (backup si le backend n'a pas encore mis à jour) ===
+
+    // 1. challenge → playing (avec phase "drawing")
     if (_currentStatus == 'challenge') {
-      // challenge -> playing: Tous les joueurs ont envoyé 3 challenges
-      if (currentSession.players.every((p) => p.challengesSent == 3)) {
+      if (currentSession.players.every((p) => p.challengesSent >= 3)) {
+        AppLogger.info('[GameStateManager] 🎯 All players sent 3 challenges → playing/drawing');
         updateStatus('playing');
+        updatePhase('drawing');
+        return;
       }
-    } else if (_currentStatus == 'playing') {
-      // playing -> finished: Timer écoulé ou tous challenges terminés
+    }
+
+    // 2. Pendant "playing", gérer les transitions de phase
+    if (_currentStatus == 'playing') {
+      // Vérifier si le temps est écoulé
       final now = DateTime.now();
       final start = currentSession.startTime;
-
-      // Finir si timer >5 min
       if (start != null && now.difference(start).inMinutes >= 5) {
+        AppLogger.info('[GameStateManager] ⏱️ Timer expired → finished');
         updateStatus('finished');
+        updatePhase(null);
         return;
       }
 
-      // Vérifier si tous les challenges sont terminés (async)
+      // Vérifier si tous les challenges sont terminés
       await _checkAllChallengesCompleted(currentSession);
+
+      // Transitions de phase simplifiées (1 cycle unique):
+      // drawing → guessing → finished (PAS de retour à drawing)
+      if (_currentPhase == 'drawing') {
+        // drawing → guessing : Tous les drawers ont fini leurs 3 dessins
+        final allDrawersReady = _checkAllDrawersReady(currentSession);
+        if (allDrawersReady) {
+          AppLogger.info('[GameStateManager] 🎯 All drawers finished → guessing');
+          updatePhase('guessing');
+        }
+      } else if (_currentPhase == 'guessing') {
+        // guessing → finished : Tous les guessers ont fini leurs 3 devinettes
+        final allGuessersReady = _checkAllGuessersReady(currentSession);
+        if (allGuessersReady) {
+          AppLogger.info('[GameStateManager] 🎯 All guessers finished → finished');
+          updateStatus('finished');
+          updatePhase(null);
+        }
+      }
     }
+  }
+
+  /// Vérifie si tous les drawers ont généré leurs 3 images
+  bool _checkAllDrawersReady(GameSession session) {
+    // Le backend gère cela via hasDrawn ou challenges.image_path
+    // Pour l'instant, on laisse le backend gérer la transition
+    return false;
+  }
+
+  /// Vérifie si tous les guessers ont résolu leurs 3 challenges
+  bool _checkAllGuessersReady(GameSession session) {
+    // Le backend gère cela via hasGuessed ou challenges.is_resolved
+    // Pour l'instant, on laisse le backend gérer la transition
+    return false;
   }
 
   /// Vérifie si tous les challenges sont terminés (async)
@@ -89,5 +191,6 @@ class GameStateManager {
   /// Nettoie les ressources
   void dispose() {
     _statusController.close();
+    _phaseController.close();
   }
 }
