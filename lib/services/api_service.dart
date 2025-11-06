@@ -217,7 +217,6 @@ class ApiService {
   Future<Player> getPlayer(String playerId) async {
     // ⚡ OPTIMISATION: Vérifier d'abord le cache
     if (_playerCache.containsKey(playerId)) {
-      AppLogger.info('[ApiService] Cache HIT pour joueur: $playerId');
       return _playerCache[playerId]!;
     }
 
@@ -283,29 +282,13 @@ class ApiService {
     // Parser la session de base
     final session = GameSession.fromJson(data);
 
-    AppLogger.info('[ApiService] 🔍 AFTER PARSING - Players count: ${session.players.length}');
-    for (int i = 0; i < session.players.length; i++) {
-      final p = session.players[i];
-      AppLogger.info('[ApiService] 🔍 Player[$i]: name="${p.name}", id=${p.id}, challengesSent=${p.challengesSent}');
-    }
-
     // Si les joueurs ont des noms vides, c'est que le serveur renvoie red_team/blue_team
     // Il faut enrichir avec les vraies données du serveur
     if (session.players.isNotEmpty && session.players.first.name.isEmpty) {
-      AppLogger.warning('[ApiService] Joueurs avec noms vides, enrichissement requis');
       final enrichedPlayers = await _enrichPlayersFromServer(session.players, data);
       final enrichedSession = session.copyWith(players: enrichedPlayers);
-
-      AppLogger.info('[ApiService] 🔍 AFTER ENRICHMENT - Players count: ${enrichedSession.players.length}');
-      for (int i = 0; i < enrichedSession.players.length; i++) {
-        final p = enrichedSession.players[i];
-        AppLogger.info('[ApiService] 🔍 Enriched[$i]: name="${p.name}", challengesSent=${p.challengesSent}');
-      }
-
       return enrichedSession;
     }
-
-    AppLogger.info('[ApiService] 🔍 NO ENRICHMENT - Returning session as-is');
 
     return session;
   }
@@ -352,8 +335,6 @@ class ApiService {
           hasDrawn: minimalPlayer.hasDrawn,
           hasGuessed: minimalPlayer.hasGuessed,
         ));
-
-        AppLogger.info('[ApiService] Enriched player: ${fullPlayer.name} (ID: ${fullPlayer.id})');
       } catch (e) {
         AppLogger.error('[ApiService] Erreur enrichissement joueur ${minimalPlayer.id}', e);
         // En cas d'erreur, garder le joueur minimal

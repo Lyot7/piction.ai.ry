@@ -5,8 +5,11 @@ import '../themes/app_theme.dart';
 import '../models/challenge.dart' as models;
 import '../services/game_facade.dart';
 import '../services/stable_diffusion_service.dart';
+import '../services/image_generation_service.dart';
 import '../utils/logger.dart';
 import 'results_screen.dart';
+import 'drawing_waiting_screen.dart';
+import 'validation_waiting_screen.dart';
 
 /// Écran de jeu principal avec gestion des rôles drawer/guesser
 class GameScreen extends StatefulWidget {
@@ -31,9 +34,15 @@ class _GameScreenState extends State<GameScreen> {
   String? _errorMessage;
   bool _isAutoGenerating = false;
 
+  // ✅ Tracker la phase actuelle de l'écran pour éviter les boucles de navigation
+  String _currentScreenPhase = 'drawing'; // 'drawing' ou 'guessing'
+
   // Scores par équipe
   int _redTeamScore = 100;
   int _blueTeamScore = 100;
+
+  // Suivi des challenges résolus (pour la phase guessing)
+  final Set<String> _resolvedChallengeIds = {};
 
   @override
   void initState() {
@@ -54,18 +63,25 @@ class _GameScreenState extends State<GameScreen> {
 
       // Déterminer la phase de jeu
       final gameSession = widget.gameFacade.currentGameSession;
-      final gamePhase = gameSession?.gamePhase ?? 'drawing';
+      final gamePhase = gameSession?.gamePhase;
+      final status = gameSession?.status;
 
-      AppLogger.info('[GameScreen] Phase: $gamePhase');
+      // ✅ FIX: Vérifier status ET gamePhase pour détecter la phase correcte
+      final isGuessingPhase = gamePhase == 'guessing' || status == 'guessing';
+
+      // ✅ Définir la phase actuelle de l'écran
+      _currentScreenPhase = isGuessingPhase ? 'guessing' : 'drawing';
+
+      AppLogger.info('[GameScreen] Phase initiale - gamePhase: $gamePhase, status: $status, screenPhase: $_currentScreenPhase');
 
       // Récupérer les challenges en fonction de la phase
       // Phase DRAWING: TOUS les joueurs dessinent leurs 3 challenges
       // Phase GUESSING: TOUS les joueurs devinent les dessins de leur coéquipier
-      if (gamePhase == 'drawing') {
+      if (_currentScreenPhase == 'drawing') {
         // ✅ TOUS les joueurs (peu importe le rôle) dessinent leurs 3 challenges
         await widget.gameFacade.refreshMyChallenges();
         _challenges = widget.gameFacade.myChallenges;
-      } else if (gamePhase == 'guessing') {
+      } else {
         // ✅ TOUS les joueurs (peu importe le rôle) devinent les dessins de leur coéquipier
         await widget.gameFacade.refreshChallengesToGuess();
         _challenges = widget.gameFacade.challengesToGuess;
@@ -115,9 +131,22 @@ class _GameScreenState extends State<GameScreen> {
       final gameSession = widget.gameFacade.currentGameSession;
       if (gameSession == null) return;
 
-      final gamePhase = gameSession.gamePhase ?? 'drawing';
+      // Rafraîchir la session pour avoir la phase à jour
+      await widget.gameFacade.refreshGameSession(gameSession.id);
+      final updatedSession = widget.gameFacade.currentGameSession;
+      if (updatedSession == null) return;
 
-      if (gamePhase == 'drawing') {
+      final gamePhase = updatedSession.gamePhase;
+      final status = updatedSession.status;
+
+      // ✅ FIX: Vérifier status ET gamePhase pour détecter le changement de phase
+      final isGuessingPhase = gamePhase == 'guessing' || status == 'guessing';
+
+      // ✅ CRITIQUE: Ne naviguer que si on ÉTAIT en drawing et qu'on PASSE à guessing
+      final shouldNavigate = _currentScreenPhase == 'drawing' && isGuessingPhase;
+
+      if (_currentScreenPhase == 'drawing' && !isGuessingPhase) {
+        // Mode drawing : refresh des challenges
         await widget.gameFacade.refreshMyChallenges();
         if (mounted) {
           setState(() {
@@ -128,20 +157,134 @@ class _GameScreenState extends State<GameScreen> {
             }
           });
         }
-      } else if (gamePhase == 'guessing') {
-        await widget.gameFacade.refreshChallengesToGuess();
+      } else if (shouldNavigate) {
+        // ✅ TRANSITION: Drawing → Guessing, naviguer vers DrawingWaitingScreen
+        AppLogger.warning('[GameScreen] ⚠️ TRANSITION détectée: drawing → guessing (gamePhase=$gamePhase, status=$status)');
+        _refreshTimer?.cancel();
+        _timer?.cancel();
+
         if (mounted) {
-          setState(() {
-            _challenges = widget.gameFacade.challengesToGuess;
-          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Transition vers phase devinette...'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          await Future.delayed(const Duration(seconds: 2));
+
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DrawingWaitingScreen(
+                  gameFacade: widget.gameFacade,
+                ),
+              ),
+            );
+          }
         }
+        return;
+      } else if (_currentScreenPhase == 'guessing') {
+        // ✅ Déjà en mode guessing, ne rien faire (pas de navigation en boucle)
+        AppLogger.info('[GameScreen] Déjà en mode guessing, polling continue sans navigation');
       }
     } catch (e) {
       AppLogger.error('[GameScreen] Erreur rafraîchissement challenges', e);
+      // ✅ Si erreur liée au changement de phase ET qu'on était en drawing, naviguer
+      if (e.toString().contains('not in the drawing phase') && _currentScreenPhase == 'drawing') {
+        AppLogger.warning('[GameScreen] ⚠️ TRANSITION détectée via erreur: drawing → guessing');
+        _refreshTimer?.cancel();
+        _timer?.cancel();
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DrawingWaitingScreen(
+                gameFacade: widget.gameFacade,
+              ),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Vérifie si la phase a changé vers "guessing" et navigue si nécessaire
+  Future<void> _checkAndHandlePhaseTransition() async {
+    try {
+      final gameSession = widget.gameFacade.currentGameSession;
+      if (gameSession == null) return;
+
+      // Refresh de la session pour avoir la phase à jour
+      await widget.gameFacade.refreshGameSession(gameSession.id);
+      final updatedSession = widget.gameFacade.currentGameSession;
+      if (updatedSession == null) return;
+
+      final gamePhase = updatedSession.gamePhase;
+      final status = updatedSession.status;
+
+      // ✅ FIX: Vérifier status ET gamePhase pour détecter le changement de phase
+      final isGuessingPhase = gamePhase == 'guessing' || status == 'guessing';
+
+      // ✅ CRITIQUE: Ne naviguer que si on ÉTAIT en drawing et qu'on PASSE à guessing
+      final shouldNavigate = _currentScreenPhase == 'drawing' && isGuessingPhase;
+
+      AppLogger.info('[GameScreen] Phase après génération - gamePhase: $gamePhase, status: $status, screenPhase: $_currentScreenPhase, shouldNavigate: $shouldNavigate');
+
+      // Si transition drawing → guessing détectée
+      if (shouldNavigate) {
+        AppLogger.warning('[GameScreen] ⚠️ TRANSITION détectée: drawing → guessing, navigation automatique');
+
+        // Arrêter les timers
+        _timer?.cancel();
+        _refreshTimer?.cancel();
+
+        if (mounted) {
+          // Message utilisateur
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Tous les joueurs ont terminé. Transition automatique...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Attendre 2 secondes pour que le message soit visible
+          await Future.delayed(const Duration(seconds: 2));
+
+          // Navigation vers DrawingWaitingScreen
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DrawingWaitingScreen(
+                  gameFacade: widget.gameFacade,
+                ),
+              ),
+            );
+          }
+        }
+      } else if (_currentScreenPhase == 'guessing') {
+        // ✅ Déjà en mode guessing, pas de navigation nécessaire
+        AppLogger.info('[GameScreen] Déjà en mode guessing après génération, pas de navigation');
+      } else {
+        // ✅ Toujours en mode drawing
+        AppLogger.info('[GameScreen] Toujours en mode drawing après génération, phase n\'a pas changé');
+      }
+    } catch (e) {
+      AppLogger.error('[GameScreen] Erreur vérification phase', e);
     }
   }
 
   void _endGame() {
+    // IMPORTANT: Arrêter les timers avant de naviguer
+    _timer?.cancel();
+    _refreshTimer?.cancel();
+    AppLogger.info('[GameScreen] Timers arrêtés avant fin de jeu');
+
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
@@ -171,6 +314,34 @@ class _GameScreenState extends State<GameScreen> {
         if (_blueTeamScore < 0) _blueTeamScore = 0;
       }
     });
+  }
+
+  void _onChallengeResolved(String challengeId) {
+    setState(() {
+      _resolvedChallengeIds.add(challengeId);
+    });
+
+    // Vérifier si tous les challenges sont résolus
+    if (_resolvedChallengeIds.length == _challenges.length && _challenges.isNotEmpty) {
+      AppLogger.success('[GameScreen] Tous les challenges résolus ! Navigation vers validation...');
+
+      // IMPORTANT: Arrêter les timers avant de naviguer
+      _timer?.cancel();
+      _refreshTimer?.cancel();
+      AppLogger.info('[GameScreen] Timers arrêtés avant navigation vers validation');
+
+      // Naviguer vers l'écran de validation
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ValidationWaitingScreen(
+            gameFacade: widget.gameFacade,
+            scoreTeam1: _redTeamScore,
+            scoreTeam2: _blueTeamScore,
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -216,7 +387,10 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     final gameSession = widget.gameFacade.currentGameSession;
-    final gamePhase = gameSession?.gamePhase ?? 'drawing';
+
+    // ✅ FIX CRITIQUE: Utiliser _currentScreenPhase au lieu de gamePhase du backend
+    // Le backend peut retourner gamePhase=null, ce qui causerait un affichage incorrect
+    final gamePhase = _currentScreenPhase;
 
     // Si pas de challenges, afficher un message d'attente
     if (_challenges.isEmpty) {
@@ -320,6 +494,8 @@ class _GameScreenState extends State<GameScreen> {
                           challenge: challenge,
                           gameFacade: widget.gameFacade,
                           onScoreDelta: _applyScoreDelta,
+                          onChallengeResolved: _onChallengeResolved,
+                          isResolved: _resolvedChallengeIds.contains(challenge.id),
                         ),
                       );
                     }
@@ -415,64 +591,115 @@ class _GameScreenState extends State<GameScreen> {
     setState(() => _isAutoGenerating = true);
 
     try {
-      AppLogger.info('[GameScreen] Début auto-génération pour ${_challenges.length} challenges');
-
-      for (int i = 0; i < _challenges.length; i++) {
-        final challenge = _challenges[i];
-
-        // Générer un prompt automatique
-        final autoPrompt = _generateAutoPrompt(challenge);
-
-        AppLogger.info('[GameScreen] Génération challenge ${i + 1}/${_challenges.length}: $autoPrompt');
-
-        // Rafraîchir la session pour vérifier la phase
-        final gameSession = widget.gameFacade.currentGameSession;
-        if (gameSession != null) {
-          await widget.gameFacade.refreshGameSession(gameSession.id);
-        }
-
-        final updatedSession = widget.gameFacade.currentGameSession;
-        if (updatedSession == null) {
-          throw Exception('Session de jeu non disponible');
-        }
-
-        // Utiliser 'drawing' par défaut si gamePhase est null
-        final gamePhase = updatedSession.gamePhase ?? 'drawing';
-        AppLogger.info('[GameScreen] Phase pour challenge ${i + 1}: $gamePhase');
-
-        if (gamePhase != 'drawing' && gamePhase != 'playing') {
-          throw Exception('Phase de jeu incorrecte: $gamePhase. Veuillez générer les images en phase "drawing".');
-        }
-
-        // Générer l'image
-        await StableDiffusionService.generateImageWithRetry(
-          autoPrompt,
-          updatedSession.id,
-          challenge.id,
-        );
-
-        // Attendre un peu entre chaque génération
-        await Future.delayed(const Duration(milliseconds: 500));
+      final gameSession = widget.gameFacade.currentGameSession;
+      if (gameSession == null) {
+        throw Exception('Aucune session de jeu active');
       }
 
-      // Rafraîchir les challenges pour récupérer les URLs
-      await widget.gameFacade.refreshMyChallenges();
+      // ✅ Copie locale pour travailler uniquement en local
+      final localChallenges = List<models.Challenge>.from(_challenges);
+      final challengesToGenerate = localChallenges.where(
+        (c) => c.imageUrl == null || c.imageUrl!.isEmpty
+      ).toList();
+
+      if (challengesToGenerate.isEmpty) {
+        AppLogger.info('[GameScreen] Toutes les images déjà générées');
+        setState(() => _isAutoGenerating = false);
+        return;
+      }
+
+      AppLogger.info('[GameScreen] Génération de ${challengesToGenerate.length} images avec ImageGenerationService');
+
+      // Utiliser ImageGenerationService qui RETOURNE les URLs générées
+      final imageService = ImageGenerationService(
+        isPhaseValid: () async {
+          await widget.gameFacade.refreshGameSession(gameSession.id);
+          final phase = widget.gameFacade.currentGameSession?.gamePhase ?? 'drawing';
+          return phase == 'drawing';
+        },
+        onProgress: (current, total) {
+          AppLogger.info('[GameScreen] Progression: $current/$total');
+        },
+        // ✅ IMPORTANT: L'imageGenerator doit retourner l'URL
+        imageGenerator: (prompt, sessionId, challengeId) async {
+          return await StableDiffusionService.generateImageWithRetry(
+            prompt,
+            sessionId,
+            challengeId,
+          );
+        },
+      );
+
+      // Générer toutes les images
+      final result = await imageService.generateImagesForChallenges(
+        challenges: challengesToGenerate,
+        gameSessionId: gameSession.id,
+        promptGenerator: _generateAutoPrompt,
+      );
+
+      AppLogger.success('[GameScreen] Génération terminée: ${result.successCount}/${result.totalCount}');
+
+      // ✅ CRITIQUE: Mettre à jour l'état LOCAL avec les URLs retournées
+      // PAS de refresh backend - on garde 100% local jusqu'à validation
+      final updatedChallenges = localChallenges.map((challenge) {
+        final generatedUrl = result.generatedUrls[challenge.id];
+        if (generatedUrl != null && generatedUrl.isNotEmpty) {
+          AppLogger.info('[GameScreen] ✅ Challenge ${challenge.id} mis à jour avec URL: $generatedUrl');
+          return challenge.copyWith(imageUrl: generatedUrl);
+        }
+        return challenge;
+      }).toList();
 
       setState(() {
-        _challenges = widget.gameFacade.myChallenges;
+        _challenges = updatedChallenges;
         _isAutoGenerating = false;
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Toutes les images ont été générées automatiquement !'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      AppLogger.success('[GameScreen] ✅ État local mis à jour, ${result.generatedUrls.length} URLs capturées');
 
-      AppLogger.success('[GameScreen] Auto-génération terminée avec succès');
+      // ✅ NOUVEAU: Vérifier immédiatement si la phase a changé
+      await _checkAndHandlePhaseTransition();
+
+      // Notification utilisateur
+      if (mounted) {
+        final imagesWithUrl = _challenges.where(
+          (c) => c.imageUrl != null && c.imageUrl!.isNotEmpty
+        ).length;
+
+        if (result.phaseClosed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${result.successCount}/${result.totalCount} images générées. Phase changée.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else if (result.isComplete && imagesWithUrl == _challenges.length) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Toutes vos images sont prêtes !'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else if (result.hasPartialSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$imagesWithUrl/${_challenges.length} images disponibles'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else if (result.hasErrors) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: ${result.errorMessage}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     } catch (e) {
       AppLogger.error('[GameScreen] Erreur auto-génération', e);
 
@@ -533,13 +760,18 @@ class _GameScreenState extends State<GameScreen> {
   Future<void> _sendAllToGuessers() async {
     AppLogger.success('[GameScreen] Envoi de tous les dessins aux devineurs');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${_challenges.length} dessins envoyés ! En attente des autres joueurs...',
+    // IMPORTANT: Arrêter les timers avant de naviguer pour éviter les erreurs
+    _timer?.cancel();
+    _refreshTimer?.cancel();
+    AppLogger.info('[GameScreen] Timers arrêtés avant navigation');
+
+    // Naviguer vers l'écran d'attente
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DrawingWaitingScreen(
+          gameFacade: widget.gameFacade,
         ),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 3),
       ),
     );
 
@@ -635,16 +867,9 @@ class _DrawerViewState extends State<_DrawerView> {
   @override
   void didUpdateWidget(_DrawerView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Log pour debug
-    AppLogger.info('[DrawerView] didUpdateWidget appelé - challengeId: ${widget.challenge.id}');
-    AppLogger.info('[DrawerView] oldWidget.imageUrl: ${oldWidget.challenge.imageUrl}');
-    AppLogger.info('[DrawerView] newWidget.imageUrl: ${widget.challenge.imageUrl}');
-    AppLogger.info('[DrawerView] _imageUrl actuel: $_imageUrl');
-
     // Mettre à jour l'image si le challenge a changé
     if (oldWidget.challenge.id != widget.challenge.id ||
         oldWidget.challenge.imageUrl != widget.challenge.imageUrl) {
-      AppLogger.success('[DrawerView] Mise à jour de l\'image vers: ${widget.challenge.imageUrl}');
       setState(() {
         _imageUrl = widget.challenge.imageUrl;
         if (widget.challenge.prompt != null && widget.challenge.prompt != _promptController.text) {
@@ -704,7 +929,6 @@ class _DrawerViewState extends State<_DrawerView> {
 
       // Vérifier que la session est en phase "drawing" (null = drawing par défaut)
       final gamePhase = updatedSession.gamePhase ?? 'drawing';
-      AppLogger.info('[DrawerView] Phase actuelle avant génération: $gamePhase');
 
       if (gamePhase != 'drawing' && gamePhase != 'playing') {
         throw Exception('La phase de jeu ne permet plus de générer d\'images (phase: $gamePhase).\nVeuillez générer toutes les images avant que le jeu ne commence.');
@@ -726,8 +950,9 @@ class _DrawerViewState extends State<_DrawerView> {
         }
       });
 
-      // Rafraîchir les challenges pour récupérer l'URL depuis le backend
-      await widget.gameFacade.refreshMyChallenges();
+      // ✅ FIX: Pas besoin de refresh backend - l'URL est déjà récupérée localement
+      // Retirer cet appel évite les erreurs si la phase a changé pendant la génération
+      // await widget.gameFacade.refreshMyChallenges(); // ❌ SUPPRIMÉ
 
       widget.onImageGenerated();
       AppLogger.success('[DrawerView] Image générée avec succès');
@@ -939,12 +1164,16 @@ class _GuesserView extends StatefulWidget {
   final models.Challenge challenge;
   final GameFacade gameFacade;
   final Function(int) onScoreDelta;
+  final Function(String) onChallengeResolved;
+  final bool isResolved;
 
   const _GuesserView({
     super.key,
     required this.challenge,
     required this.gameFacade,
     required this.onScoreDelta,
+    required this.onChallengeResolved,
+    required this.isResolved,
   });
 
   @override
@@ -1003,6 +1232,7 @@ class _GuesserViewState extends State<_GuesserView> {
 
       if (isCorrect) {
         widget.onScoreDelta(25); // +25 points pour bonne réponse
+        widget.onChallengeResolved(widget.challenge.id); // Marquer comme résolu
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1048,26 +1278,60 @@ class _GuesserViewState extends State<_GuesserView> {
   @override
   Widget build(BuildContext context) {
     final imageUrl = widget.challenge.imageUrl;
+    final isResolved = widget.isResolved;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Banner de succès si résolu
+        if (isResolved)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Challenge résolu ! ✓',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (isResolved) const SizedBox(height: 16),
+
         // Info
         Card(
-          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+          color: isResolved
+              ? Colors.green.withValues(alpha: 0.1)
+              : AppTheme.primaryColor.withValues(alpha: 0.1),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Icon(Icons.search, color: AppTheme.primaryColor),
+                Icon(
+                  isResolved ? Icons.check_circle : Icons.search,
+                  color: isResolved ? Colors.green : AppTheme.primaryColor,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Devinez ce qui est représenté dans l\'image',
+                    isResolved
+                        ? 'Challenge terminé'
+                        : 'Devinez ce qui est représenté dans l\'image',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppTheme.primaryColor,
-                      fontWeight: FontWeight.w600,
-                    ),
+                          color: isResolved ? Colors.green : AppTheme.primaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
               ],
@@ -1146,17 +1410,17 @@ class _GuesserViewState extends State<_GuesserView> {
             Expanded(
               child: TextField(
                 controller: _guessController,
-                decoration: const InputDecoration(
-                  hintText: 'Votre réponse...',
-                  labelText: 'Que voyez-vous dans l\'image ?',
+                decoration: InputDecoration(
+                  hintText: isResolved ? 'Challenge résolu ✓' : 'Votre réponse...',
+                  labelText: isResolved ? 'Terminé' : 'Que voyez-vous dans l\'image ?',
                 ),
-                enabled: !_isSubmitting && imageUrl != null,
+                enabled: !_isSubmitting && imageUrl != null && !isResolved,
                 onSubmitted: (_) => _submitGuess(),
               ),
             ),
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: !_isSubmitting && imageUrl != null
+              onPressed: !_isSubmitting && imageUrl != null && !isResolved
                   ? _submitGuess
                   : null,
               icon: _isSubmitting
@@ -1165,10 +1429,10 @@ class _GuesserViewState extends State<_GuesserView> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.send),
-              label: const Text('Valider'),
+                  : Icon(isResolved ? Icons.check : Icons.send),
+              label: Text(isResolved ? 'Validé' : 'Valider'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
+                backgroundColor: isResolved ? Colors.green : AppTheme.primaryColor,
                 foregroundColor: Colors.white,
               ),
             ),

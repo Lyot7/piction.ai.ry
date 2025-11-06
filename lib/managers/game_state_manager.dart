@@ -124,7 +124,7 @@ class GameStateManager {
       // drawing → guessing → finished (PAS de retour à drawing)
       if (_currentPhase == 'drawing') {
         // drawing → guessing : Tous les drawers ont fini leurs 3 dessins
-        final allDrawersReady = _checkAllDrawersReady(currentSession);
+        final allDrawersReady = await _checkAllDrawersReady(currentSession);
         if (allDrawersReady) {
           AppLogger.info('[GameStateManager] 🎯 All drawers finished → guessing');
           updatePhase('guessing');
@@ -142,10 +142,35 @@ class GameStateManager {
   }
 
   /// Vérifie si tous les drawers ont généré leurs 3 images
-  bool _checkAllDrawersReady(GameSession session) {
-    // Le backend gère cela via hasDrawn ou challenges.image_path
-    // Pour l'instant, on laisse le backend gérer la transition
-    return false;
+  Future<bool> _checkAllDrawersReady(GameSession session) async {
+    try {
+      // Récupérer tous les challenges de la session via ChallengeManager
+      final allChallenges = await _challengeManager.listSessionChallenges(session.id);
+
+      if (allChallenges.isEmpty) {
+        AppLogger.warning('[GameStateManager] Aucun challenge trouvé');
+        return false;
+      }
+
+      // Compter combien de challenges ont une image
+      final challengesWithImage = allChallenges.where((c) {
+        return c.imageUrl != null && c.imageUrl!.isNotEmpty;
+      }).length;
+
+      AppLogger.info('[GameStateManager] 🖼️ Images générées: $challengesWithImage/${allChallenges.length}');
+
+      // Tous les drawers sont prêts si TOUS les challenges ont une image
+      final allReady = challengesWithImage == allChallenges.length && allChallenges.length > 0;
+
+      if (allReady) {
+        AppLogger.success('[GameStateManager] ✅ Tous les drawers ont généré leurs images ($challengesWithImage/$challengesWithImage)');
+      }
+
+      return allReady;
+    } catch (e) {
+      AppLogger.error('[GameStateManager] Erreur _checkAllDrawersReady', e);
+      return false;
+    }
   }
 
   /// Vérifie si tous les guessers ont résolu leurs 3 challenges

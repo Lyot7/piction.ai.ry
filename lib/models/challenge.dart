@@ -81,16 +81,8 @@ class Challenge {
       }
     }
 
-    // Log pour debug: voir ce que contient le JSON
     final challengeId = (json['id'] ?? json['_id'] ?? json['challengeId'] ?? '').toString();
     final imageUrl = json['imageUrl'] ?? json['image_url'] ?? json['image_path'];
-
-    // Log toutes les clés possibles pour l'image
-    print('[Challenge.fromJson] Challenge ID: $challengeId');
-    print('[Challenge.fromJson] imageUrl field: ${json['imageUrl']}');
-    print('[Challenge.fromJson] image_url field: ${json['image_url']}');
-    print('[Challenge.fromJson] image_path field: ${json['image_path']}');
-    print('[Challenge.fromJson] Final imageUrl: $imageUrl');
 
     return Challenge(
       id: challengeId,
