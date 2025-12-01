@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piction_ai_ry/models/game_session.dart';
 
@@ -29,8 +30,8 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Session status: ${session.status}');
-      print('📊 Players count: ${session.players.length}');
+      debugPrint('📊 Session status: ${session.status}');
+      debugPrint('📊 Players count: ${session.players.length}');
 
       expect(session.status, 'drawing');
       expect(session.players.length, 4);
@@ -41,10 +42,10 @@ void main() {
       final player370 = session.players.firstWhere((p) => p.id == '370');
       final player372 = session.players.firstWhere((p) => p.id == '372');
 
-      print('📊 Player 602 challengesSent: ${player602.challengesSent}');
-      print('📊 Player 369 challengesSent: ${player369.challengesSent}');
-      print('📊 Player 370 challengesSent: ${player370.challengesSent}');
-      print('📊 Player 372 challengesSent: ${player372.challengesSent}');
+      debugPrint('📊 Player 602 challengesSent: ${player602.challengesSent}');
+      debugPrint('📊 Player 369 challengesSent: ${player369.challengesSent}');
+      debugPrint('📊 Player 370 challengesSent: ${player370.challengesSent}');
+      debugPrint('📊 Player 372 challengesSent: ${player372.challengesSent}');
 
       expect(player602.challengesSent, 3); // A envoyé 3 challenges
       expect(player369.challengesSent, 3); // A envoyé 3 challenges
@@ -53,7 +54,7 @@ void main() {
 
       // Compter combien ont envoyé 3+ challenges
       final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
-      print('📊 Players with 3+ challenges: $playersReady/4');
+      debugPrint('📊 Players with 3+ challenges: $playersReady/4');
       expect(playersReady, 2); // 602 et 369
     });
 
@@ -71,12 +72,12 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Session status: ${session.status}');
+      debugPrint('📊 Session status: ${session.status}');
       expect(session.status, 'challenge');
 
       // Tous les joueurs devraient avoir 0 challenges
       for (final player in session.players) {
-        print('📊 Player ${player.id} challengesSent: ${player.challengesSent}');
+        debugPrint('📊 Player ${player.id} challengesSent: ${player.challengesSent}');
         expect(player.challengesSent, 0);
       }
     });
@@ -110,12 +111,12 @@ void main() {
 
       // Tous devraient avoir 3 challenges
       for (final player in session.players) {
-        print('📊 Player ${player.id} challengesSent: ${player.challengesSent}');
+        debugPrint('📊 Player ${player.id} challengesSent: ${player.challengesSent}');
         expect(player.challengesSent, 3);
       }
 
       final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
-      print('📊 ALL READY! Players with 3+ challenges: $playersReady/4');
+      debugPrint('📊 ALL READY! Players with 3+ challenges: $playersReady/4');
       expect(playersReady, 4);
     });
   });

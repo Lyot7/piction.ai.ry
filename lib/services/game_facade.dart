@@ -171,6 +171,14 @@ class GameFacade {
   /// Crée une nouvelle session de jeu
   Future<GameSession> createGameSession() async {
     _currentGameSession = await session.createGameSession();
+
+    // ✅ FIX: S'assurer que le créateur de la room est marqué comme host
+    // Si le backend n'a pas renvoyé de hostId, utiliser l'ID du joueur actuel
+    if (_currentGameSession!.hostId == null && _currentPlayer != null) {
+      AppLogger.info('[GameFacade] 👑 Setting hostId to current player: ${_currentPlayer!.id}');
+      _currentGameSession = _currentGameSession!.copyWith(hostId: _currentPlayer!.id);
+    }
+
     _gameSessionController.add(_currentGameSession);
     return _currentGameSession!;
   }
@@ -208,7 +216,17 @@ class GameFacade {
 
   /// Rafraîchit les informations de la session
   Future<void> refreshGameSession(String gameSessionId) async {
+    // ✅ FIX: Préserver le hostId si le backend ne le renvoie pas
+    final previousHostId = _currentGameSession?.hostId;
+
     _currentGameSession = await session.refreshGameSession(gameSessionId);
+
+    // Si le backend n'a pas renvoyé de hostId mais on l'avait avant, le préserver
+    if (_currentGameSession != null && _currentGameSession!.hostId == null && previousHostId != null) {
+      AppLogger.info('[GameFacade] 👑 Preserving hostId from previous session: $previousHostId');
+      _currentGameSession = _currentGameSession!.copyWith(hostId: previousHostId);
+    }
+
     _gameSessionController.add(_currentGameSession);
 
     // Vérifier les transitions d'état automatiques

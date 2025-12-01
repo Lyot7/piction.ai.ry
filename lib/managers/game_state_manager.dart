@@ -160,7 +160,7 @@ class GameStateManager {
       AppLogger.info('[GameStateManager] 🖼️ Images générées: $challengesWithImage/${allChallenges.length}');
 
       // Tous les drawers sont prêts si TOUS les challenges ont une image
-      final allReady = challengesWithImage == allChallenges.length && allChallenges.length > 0;
+      final allReady = challengesWithImage == allChallenges.length && allChallenges.isNotEmpty;
 
       if (allReady) {
         AppLogger.success('[GameStateManager] ✅ Tous les drawers ont généré leurs images ($challengesWithImage/$challengesWithImage)');

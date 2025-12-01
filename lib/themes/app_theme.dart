@@ -21,12 +21,6 @@ class AppTheme {
   static const Color drawerColor = Color(0xFF8B5CF6); // Violet dessinateur
   static const Color guesserColor = Color(0xFF06B6D4); // Cyan devineur
 
-  // Couleurs legacy (à migrer)
-  @Deprecated('Use teamRedColor or teamBlueColor instead')
-  static const Color team1Color = teamBlueColor;
-  @Deprecated('Use teamRedColor or teamBlueColor instead')
-  static const Color team2Color = Color(0xFFF59E0B); // Orange
-  
   /// Theme data principal
   static ThemeData get lightTheme {
     return ThemeData(

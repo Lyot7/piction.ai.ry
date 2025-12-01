@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piction_ai_ry/models/game_session.dart';
 import 'package:piction_ai_ry/models/player.dart';
@@ -44,9 +45,9 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Test 1 - Session ID: ${session.id}');
-      print('📊 Test 1 - Status: ${session.status}');
-      print('📊 Test 1 - Players count: ${session.players.length}');
+      debugPrint('📊 Test 1 - Session ID: ${session.id}');
+      debugPrint('📊 Test 1 - Status: ${session.status}');
+      debugPrint('📊 Test 1 - Players count: ${session.players.length}');
 
       expect(session.id, 'session123');
       expect(session.status, 'challenge');
@@ -57,12 +58,12 @@ void main() {
       expect(redPlayers.length, 2);
 
       final alice = redPlayers.firstWhere((p) => p.name == 'Alice');
-      print('📊 Test 1 - Alice challengesSent: ${alice.challengesSent}');
+      debugPrint('📊 Test 1 - Alice challengesSent: ${alice.challengesSent}');
       expect(alice.challengesSent, 3);
       expect(alice.role, 'drawer');
 
       final bob = redPlayers.firstWhere((p) => p.name == 'Bob');
-      print('📊 Test 1 - Bob challengesSent: ${bob.challengesSent}');
+      debugPrint('📊 Test 1 - Bob challengesSent: ${bob.challengesSent}');
       expect(bob.challengesSent, 0);
       expect(bob.role, 'guesser');
 
@@ -71,16 +72,16 @@ void main() {
       expect(bluePlayers.length, 2);
 
       final charlie = bluePlayers.firstWhere((p) => p.name == 'Charlie');
-      print('📊 Test 1 - Charlie challengesSent: ${charlie.challengesSent}');
+      debugPrint('📊 Test 1 - Charlie challengesSent: ${charlie.challengesSent}');
       expect(charlie.challengesSent, 3);
 
       final diana = bluePlayers.firstWhere((p) => p.name == 'Diana');
-      print('📊 Test 1 - Diana challengesSent: ${diana.challengesSent}');
+      debugPrint('📊 Test 1 - Diana challengesSent: ${diana.challengesSent}');
       expect(diana.challengesSent, 2);
 
       // Compter combien ont envoyé 3 challenges
       final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
-      print('📊 Test 1 - Players with 3+ challenges: $playersReady/4');
+      debugPrint('📊 Test 1 - Players with 3+ challenges: $playersReady/4');
       expect(playersReady, 2); // Alice et Charlie
     });
 
@@ -97,9 +98,9 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Test 2 - Session ID: ${session.id}');
-      print('📊 Test 2 - Status: ${session.status}');
-      print('📊 Test 2 - Players count: ${session.players.length}');
+      debugPrint('📊 Test 2 - Session ID: ${session.id}');
+      debugPrint('📊 Test 2 - Status: ${session.status}');
+      debugPrint('📊 Test 2 - Players count: ${session.players.length}');
 
       expect(session.id, 'session456');
       expect(session.status, 'lobby');
@@ -151,9 +152,9 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Test 3 - Session ID: ${session.id}');
-      print('📊 Test 3 - Status: ${session.status}');
-      print('📊 Test 3 - Players count: ${session.players.length}');
+      debugPrint('📊 Test 3 - Session ID: ${session.id}');
+      debugPrint('📊 Test 3 - Status: ${session.status}');
+      debugPrint('📊 Test 3 - Players count: ${session.players.length}');
 
       expect(session.id, 'session789');
       expect(session.status, 'playing');
@@ -161,7 +162,7 @@ void main() {
 
       // Tous les joueurs ont envoyé 3 challenges
       final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
-      print('📊 Test 3 - Players with 3+ challenges: $playersReady/4');
+      debugPrint('📊 Test 3 - Players with 3+ challenges: $playersReady/4');
       expect(playersReady, 4);
     });
 
@@ -190,18 +191,18 @@ void main() {
       final json = jsonDecode(jsonString);
       final session = GameSession.fromJson(json);
 
-      print('📊 Test 4 - Session ID: ${session.id}');
-      print('📊 Test 4 - Players count: ${session.players.length}');
+      debugPrint('📊 Test 4 - Session ID: ${session.id}');
+      debugPrint('📊 Test 4 - Players count: ${session.players.length}');
 
       expect(session.players.length, 2);
 
       final ivy = session.players.firstWhere((p) => p.name == 'Ivy');
-      print('📊 Test 4 - Ivy ID: ${ivy.id}, challengesSent: ${ivy.challengesSent}');
+      debugPrint('📊 Test 4 - Ivy ID: ${ivy.id}, challengesSent: ${ivy.challengesSent}');
       expect(ivy.id, 'p1');
       expect(ivy.challengesSent, 1);
 
       final jack = session.players.firstWhere((p) => p.name == 'Jack');
-      print('📊 Test 4 - Jack ID: ${jack.id}, challengesSent: ${jack.challengesSent}');
+      debugPrint('📊 Test 4 - Jack ID: ${jack.id}, challengesSent: ${jack.challengesSent}');
       expect(jack.id, 'p2');
       expect(jack.challengesSent, 2);
     });
@@ -225,9 +226,9 @@ void main() {
       final json = jsonDecode(jsonString);
       final player = Player.fromJson(json);
 
-      print('📊 Player Test - Name: ${player.name}');
-      print('📊 Player Test - challengesSent: ${player.challengesSent}');
-      print('📊 Player Test - isHost: ${player.isHost}');
+      debugPrint('📊 Player Test - Name: ${player.name}');
+      debugPrint('📊 Player Test - challengesSent: ${player.challengesSent}');
+      debugPrint('📊 Player Test - isHost: ${player.isHost}');
 
       expect(player.id, 'p123');
       expect(player.name, 'TestPlayer');
@@ -250,8 +251,8 @@ void main() {
       final json = jsonDecode(jsonString);
       final player = Player.fromJson(json);
 
-      print('📊 Player Test 2 - Name: ${player.name}');
-      print('📊 Player Test 2 - challengesSent: ${player.challengesSent}');
+      debugPrint('📊 Player Test 2 - Name: ${player.name}');
+      debugPrint('📊 Player Test 2 - challengesSent: ${player.challengesSent}');
 
       expect(player.id, 'p456');
       expect(player.name, 'TestPlayer2');

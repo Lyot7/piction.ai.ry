@@ -89,29 +89,8 @@ void main() {
       expect(RoleAssignment.areRolesValid(invalidSession), isFalse);
     });
 
-    test('should switch all roles correctly', () {
-      final session = GameSession(
-        id: 'test-session',
-        status: 'playing',
-        players: [
-          const Player(id: 'red1', name: 'Red Player 1', color: 'red', role: 'drawer'),
-          const Player(id: 'red2', name: 'Red Player 2', color: 'red', role: 'guesser'),
-          const Player(id: 'blue1', name: 'Blue Player 1', color: 'blue', role: 'drawer'),
-          const Player(id: 'blue2', name: 'Blue Player 2', color: 'blue', role: 'guesser'),
-        ],
-      );
-
-      final sessionWithSwitchedRoles = RoleAssignment.switchAllRoles(session);
-
-      // Vérifier que les rôles sont inversés
-      expect(sessionWithSwitchedRoles.players[0].role, equals('guesser'));
-      expect(sessionWithSwitchedRoles.players[1].role, equals('drawer'));
-      expect(sessionWithSwitchedRoles.players[2].role, equals('guesser'));
-      expect(sessionWithSwitchedRoles.players[3].role, equals('drawer'));
-
-      // Vérifier que les rôles restent valides après inversion
-      expect(RoleAssignment.areRolesValid(sessionWithSwitchedRoles), isTrue);
-    });
+    // NOTE: Test 'should switch all roles correctly' supprimé
+    // Le flow simplifié n'utilise plus l'inversion des rôles (switchAllRoles)
 
     test('should not assign roles to incomplete teams', () {
       final incompleteSession = GameSession(

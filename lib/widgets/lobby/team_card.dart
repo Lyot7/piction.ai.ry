@@ -128,24 +128,29 @@ class TeamCard extends StatelessWidget {
               const SizedBox(height: 16),
 
               // Liste des slots (2 max)
+              // ✅ SOLID: Utilise session.isPlayerHost() comme source unique de vérité
               ...List.generate(2, (index) {
                 // D'abord afficher les joueurs réels
                 if (index < teamPlayers.length) {
+                  final player = teamPlayers[index];
                   return PlayerSlot(
-                    player: teamPlayers[index],
+                    player: player,
                     teamColor: color,
                     isCurrentPlayer: currentPlayerId != null &&
-                        teamPlayers[index].id == currentPlayerId,
+                        player.id == currentPlayerId,
                     isLoading: false,
+                    isHost: session.isPlayerHost(player.id),
                   );
                 }
                 // Ensuite les joueurs en transition
                 else if (index < totalCount) {
                   final transitionIndex = index - teamPlayers.length;
+                  final player = playersTransitioningToThisTeam[transitionIndex];
                   return PlayerSlot(
-                    player: playersTransitioningToThisTeam[transitionIndex],
+                    player: player,
                     teamColor: color,
                     isLoading: true,
+                    isHost: session.isPlayerHost(player.id),
                   );
                 }
                 // Enfin les slots vides
@@ -154,6 +159,7 @@ class TeamCard extends StatelessWidget {
                     player: null,
                     teamColor: color,
                     isLoading: false,
+                    isHost: false,
                   );
                 }
               }),

@@ -73,5 +73,3 @@ app.*.map.json
 **/linux/build/
 **/linux/flutter/ephemeral/
 
-# API documentation
-*.json

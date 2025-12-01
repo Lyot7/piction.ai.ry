@@ -296,17 +296,22 @@ class ApiService {
   /// Enrichit les joueurs en récupérant leurs infos du serveur
   /// Cette fonction récupère les VRAIES données du serveur, pas des données locales
   /// ⚡ OPTIMISATION: Évite les appels API si le joueur a déjà toutes ses données
+  ///
+  /// ✅ SOLID: Le hostId est géré à deux niveaux:
+  /// 1. GameSession.hostId - Source unique de vérité (parsé dans fromJson)
+  /// 2. Player.isHost - Conservé pour rétrocompatibilité, mais utiliser session.isPlayerHost()
   Future<List<Player>> _enrichPlayersFromServer(
     List<Player> minimalPlayers,
     Map<String, dynamic> sessionData,
   ) async {
     final enrichedPlayers = <Player>[];
 
-    // Déterminer le host (premier joueur de la première équipe)
-    final redTeam = (sessionData['red_team'] as List<dynamic>?) ?? [];
-    final blueTeam = (sessionData['blue_team'] as List<dynamic>?) ?? [];
-    final hostId = redTeam.isNotEmpty ? redTeam.first.toString() :
-                   (blueTeam.isNotEmpty ? blueTeam.first.toString() : null);
+    // Le hostId est déjà parsé dans GameSession.fromJson()
+    // On le récupère ici pour marquer les joueurs (rétrocompatibilité)
+    final backendHostId = (sessionData['host_id'] ?? sessionData['hostId'] ??
+                    sessionData['created_by'] ?? sessionData['createdBy'])?.toString();
+
+    AppLogger.info('[ApiService] 👑 Host ID from backend: $backendHostId');
 
     // Enrichir chaque joueur avec ses vraies données du serveur
     for (final minimalPlayer in minimalPlayers) {
@@ -314,10 +319,16 @@ class ApiService {
         // ⚡ OPTIMISATION CRITIQUE: Ne pas enrichir si le joueur a déjà un nom
         // Cela évite des appels API inutiles à chaque polling
         if (minimalPlayer.name.isNotEmpty) {
-          // Le joueur est déjà complet, juste mettre à jour isHost si nécessaire
-          final isHost = minimalPlayer.id == hostId;
+          // Déterminer isHost: priorité au backend, sinon préserver l'existant
+          final bool isHost;
+          if (backendHostId != null) {
+            isHost = minimalPlayer.id == backendHostId;
+          } else {
+            // Pas de hostId du backend, préserver la valeur existante
+            isHost = minimalPlayer.isHost;
+          }
           enrichedPlayers.add(minimalPlayer.copyWith(isHost: isHost));
-          AppLogger.info('[ApiService] Player already complete: ${minimalPlayer.name} (ID: ${minimalPlayer.id}) - SKIPPED API call');
+          AppLogger.info('[ApiService] Player already complete: ${minimalPlayer.name} (ID: ${minimalPlayer.id}, isHost: $isHost) - SKIPPED API call');
           continue;
         }
 
@@ -325,7 +336,13 @@ class ApiService {
         // getPlayer() utilise maintenant un cache, donc l'appel sera rapide après le premier fetch
         final fullPlayer = await getPlayer(minimalPlayer.id);
 
-        final isHost = minimalPlayer.id == hostId;
+        // Déterminer isHost: priorité au backend, sinon préserver l'existant
+        final bool isHost;
+        if (backendHostId != null) {
+          isHost = minimalPlayer.id == backendHostId;
+        } else {
+          isHost = minimalPlayer.isHost;
+        }
 
         enrichedPlayers.add(fullPlayer.copyWith(
           color: minimalPlayer.color,

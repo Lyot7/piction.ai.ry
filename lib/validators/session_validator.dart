@@ -51,12 +51,9 @@ class SessionValidator {
   }
 
   /// Vérifie si un joueur est l'hôte
+  /// ✅ SOLID: Délègue à session.isPlayerHost() comme source unique de vérité
   static bool isPlayerHost(GameSession session, String playerId) {
-    final player = session.players
-        .where((p) => p.id == playerId)
-        .firstOrNull;
-
-    return player?.isHost ?? false;
+    return session.isPlayerHost(playerId);
   }
 
   /// Vérifie si une session est vide

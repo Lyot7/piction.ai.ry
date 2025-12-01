@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../themes/app_theme.dart';
 import '../models/challenge.dart' as models;
 import '../services/game_facade.dart';
 import '../services/stable_diffusion_service.dart';
 import '../services/image_generation_service.dart';
 import '../utils/logger.dart';
+import '../widgets/game/drawer_view.dart';
+import '../widgets/game/guesser_view.dart';
 import 'results_screen.dart';
 import 'drawing_waiting_screen.dart';
 import 'validation_waiting_screen.dart';
@@ -22,11 +23,12 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
-  // Timer de 5 minutes
-  static const int totalSeconds = 5 * 60;
+  // Durée des timers par phase
+  static const int drawingPhaseSeconds = 5 * 60; // 5 minutes pour dessiner
+  static const int guessingPhaseSeconds = 2 * 60; // 2 minutes pour deviner
   Timer? _timer;
   Timer? _refreshTimer;
-  int _remaining = totalSeconds;
+  int _remaining = drawingPhaseSeconds;
 
   // État du jeu
   List<models.Challenge> _challenges = [];
@@ -72,6 +74,9 @@ class _GameScreenState extends State<GameScreen> {
       // ✅ Définir la phase actuelle de l'écran
       _currentScreenPhase = isGuessingPhase ? 'guessing' : 'drawing';
 
+      // ✅ SYNC SCORES: Initialiser les scores depuis la session backend
+      _syncScoresFromSession(gameSession);
+
       AppLogger.info('[GameScreen] Phase initiale - gamePhase: $gamePhase, status: $status, screenPhase: $_currentScreenPhase');
 
       // Récupérer les challenges en fonction de la phase
@@ -88,6 +93,12 @@ class _GameScreenState extends State<GameScreen> {
       }
 
       AppLogger.info('[GameScreen] ${_challenges.length} challenges chargés');
+
+      // ✅ Définir la durée du timer selon la phase
+      _remaining = _currentScreenPhase == 'guessing'
+          ? guessingPhaseSeconds
+          : drawingPhaseSeconds;
+      AppLogger.info('[GameScreen] Timer initialisé: ${_remaining ~/ 60} minutes pour phase $_currentScreenPhase');
 
       setState(() {
         _isLoading = false;
@@ -135,6 +146,9 @@ class _GameScreenState extends State<GameScreen> {
       await widget.gameFacade.refreshGameSession(gameSession.id);
       final updatedSession = widget.gameFacade.currentGameSession;
       if (updatedSession == null) return;
+
+      // ✅ SYNC SCORES: Synchroniser les scores depuis le backend après refresh
+      _syncScoresFromSession(updatedSession);
 
       final gamePhase = updatedSession.gamePhase;
       final status = updatedSession.status;
@@ -279,44 +293,159 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void _endGame() {
+  void _endGame() async {
     // IMPORTANT: Arrêter les timers avant de naviguer
     _timer?.cancel();
     _refreshTimer?.cancel();
     AppLogger.info('[GameScreen] Timers arrêtés avant fin de jeu');
 
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => ResultsScreen(
-          gameFacade: widget.gameFacade,
-          scoreTeam1: _redTeamScore,
-          scoreTeam2: _blueTeamScore,
+    // ✅ SYNC FINAL SCORES: Récupérer les scores finaux depuis le backend
+    try {
+      final gameSession = widget.gameFacade.currentGameSession;
+      if (gameSession != null) {
+        await widget.gameFacade.refreshGameSession(gameSession.id);
+        final finalSession = widget.gameFacade.currentGameSession;
+        if (finalSession != null) {
+          // Utiliser les scores de la session backend (source de vérité)
+          final finalRedScore = finalSession.teamScores['red'] ?? _redTeamScore;
+          final finalBlueScore = finalSession.teamScores['blue'] ?? _blueTeamScore;
+
+          AppLogger.info('[GameScreen] 🏆 Scores finaux - Backend Red: $finalRedScore, Blue: $finalBlueScore | Local Red: $_redTeamScore, Blue: $_blueTeamScore');
+
+          // Naviguer avec les scores du backend
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => ResultsScreen(
+                  gameFacade: widget.gameFacade,
+                  scoreTeam1: finalRedScore,
+                  scoreTeam2: finalBlueScore,
+                ),
+                transitionDuration: const Duration(milliseconds: 150),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  return FadeTransition(opacity: animation, child: child);
+                },
+              ),
+            );
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      AppLogger.error('[GameScreen] Erreur récupération scores finaux, utilisation scores locaux', e);
+    }
+
+    // Fallback: utiliser les scores locaux si le backend échoue
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => ResultsScreen(
+            gameFacade: widget.gameFacade,
+            scoreTeam1: _redTeamScore,
+            scoreTeam2: _blueTeamScore,
+          ),
+          transitionDuration: const Duration(milliseconds: 150),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
         ),
-        transitionDuration: const Duration(milliseconds: 150),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-      ),
-    );
+      );
+    }
   }
 
-  void _applyScoreDelta(int delta) {
+  /// Récupère la couleur d'équipe du joueur actuel depuis la session de jeu
+  ///
+  /// Retourne la couleur depuis la liste des joueurs de la session (source fiable)
+  /// car currentPlayer peut ne pas avoir la couleur mise à jour
+  String? _getCurrentPlayerTeamColor() {
     final currentPlayer = widget.gameFacade.currentPlayer;
-    if (currentPlayer == null) return;
+    final gameSession = widget.gameFacade.currentGameSession;
+
+    if (currentPlayer == null || gameSession == null) {
+      AppLogger.warning('[GameScreen] _getCurrentPlayerTeamColor: player ou session null');
+      return null;
+    }
+
+    // Chercher le joueur dans la session pour avoir la couleur à jour
+    final playerInSession = gameSession.players
+        .where((p) => p.id == currentPlayer.id)
+        .firstOrNull;
+
+    if (playerInSession != null) {
+      AppLogger.info('[GameScreen] 🎨 Couleur depuis session: ${playerInSession.color} (joueur: ${playerInSession.name})');
+      return playerInSession.color;
+    }
+
+    // Fallback sur currentPlayer.color si pas trouvé dans la session
+    AppLogger.warning('[GameScreen] 🎨 Joueur non trouvé dans session, fallback sur currentPlayer.color: ${currentPlayer.color}');
+    return currentPlayer.color;
+  }
+
+  /// Applique un delta de score à une équipe spécifique
+  ///
+  /// [delta] : points à ajouter (négatif pour retirer)
+  /// [teamColor] : 'red' ou 'blue' - si null, utilise la couleur du joueur actuel
+  void _applyScoreDelta(int delta, {String? teamColor}) {
+    // Déterminer l'équipe à impacter (utilise teamColor fourni ou récupère depuis la session)
+    final String? targetTeam = teamColor ?? _getCurrentPlayerTeamColor();
+
+    // ✅ VALIDATION: S'assurer que targetTeam est valide
+    if (targetTeam == null) {
+      AppLogger.error('[GameScreen] _applyScoreDelta: impossible de déterminer l\'équipe, delta $delta ignoré');
+      return;
+    }
+
+    if (targetTeam != 'red' && targetTeam != 'blue') {
+      AppLogger.error('[GameScreen] _applyScoreDelta: couleur invalide "$targetTeam", delta $delta ignoré');
+      return;
+    }
+
+    AppLogger.info('[GameScreen] 💰 Score delta: $delta pour équipe $targetTeam');
 
     setState(() {
-      if (currentPlayer.color == 'red') {
+      if (targetTeam == 'red') {
         _redTeamScore += delta;
         if (_redTeamScore < 0) _redTeamScore = 0;
-      } else {
+        AppLogger.info('[GameScreen] 💰 Score RED: $_redTeamScore');
+      } else if (targetTeam == 'blue') {
         _blueTeamScore += delta;
         if (_blueTeamScore < 0) _blueTeamScore = 0;
+        AppLogger.info('[GameScreen] 💰 Score BLUE: $_blueTeamScore');
       }
     });
   }
 
-  void _onChallengeResolved(String challengeId) {
+  /// Synchronise les scores locaux depuis la session backend
+  ///
+  /// Utilise session.teamScores si disponible (priorité backend),
+  /// sinon conserve les scores locaux (fallback)
+  void _syncScoresFromSession(dynamic gameSession) {
+    if (gameSession == null) return;
+
+    final sessionRedScore = gameSession.teamScores['red'] as int?;
+    final sessionBlueScore = gameSession.teamScores['blue'] as int?;
+
+    // Si le backend envoie des scores (différents de 100/100 par défaut ou après des actions),
+    // synchroniser avec les valeurs backend
+    if (sessionRedScore != null && sessionBlueScore != null) {
+      // Vérifier si les scores backend ont changé (différent des valeurs par défaut initiales)
+      final hasBackendScores = sessionRedScore != 100 || sessionBlueScore != 100;
+
+      if (hasBackendScores) {
+        setState(() {
+          _redTeamScore = sessionRedScore;
+          _blueTeamScore = sessionBlueScore;
+        });
+        AppLogger.info('[GameScreen] ✅ Scores synchronisés depuis backend - Red: $sessionRedScore, Blue: $sessionBlueScore');
+      } else {
+        AppLogger.info('[GameScreen] Scores backend par défaut (100/100), conservation des scores locaux - Red: $_redTeamScore, Blue: $_blueTeamScore');
+      }
+    }
+  }
+
+  void _onChallengeResolved(String challengeId) async {
     setState(() {
       _resolvedChallengeIds.add(challengeId);
     });
@@ -330,17 +459,38 @@ class _GameScreenState extends State<GameScreen> {
       _refreshTimer?.cancel();
       AppLogger.info('[GameScreen] Timers arrêtés avant navigation vers validation');
 
-      // Naviguer vers l'écran de validation
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ValidationWaitingScreen(
-            gameFacade: widget.gameFacade,
-            scoreTeam1: _redTeamScore,
-            scoreTeam2: _blueTeamScore,
+      // ✅ SYNC SCORES: Récupérer les scores finaux depuis le backend
+      int finalRedScore = _redTeamScore;
+      int finalBlueScore = _blueTeamScore;
+
+      try {
+        final gameSession = widget.gameFacade.currentGameSession;
+        if (gameSession != null) {
+          await widget.gameFacade.refreshGameSession(gameSession.id);
+          final updatedSession = widget.gameFacade.currentGameSession;
+          if (updatedSession != null) {
+            finalRedScore = updatedSession.teamScores['red'] ?? _redTeamScore;
+            finalBlueScore = updatedSession.teamScores['blue'] ?? _blueTeamScore;
+            AppLogger.info('[GameScreen] 📊 Scores avant validation - Backend Red: $finalRedScore, Blue: $finalBlueScore');
+          }
+        }
+      } catch (e) {
+        AppLogger.error('[GameScreen] Erreur sync scores avant validation, utilisation scores locaux', e);
+      }
+
+      // Naviguer vers l'écran de validation avec les scores backend
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ValidationWaitingScreen(
+              gameFacade: widget.gameFacade,
+              scoreTeam1: finalRedScore,
+              scoreTeam2: finalBlueScore,
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -385,8 +535,6 @@ class _GameScreenState extends State<GameScreen> {
         ),
       );
     }
-
-    final gameSession = widget.gameFacade.currentGameSession;
 
     // ✅ FIX CRITIQUE: Utiliser _currentScreenPhase au lieu de gamePhase du backend
     // Le backend peut retourner gamePhase=null, ce qui causerait un affichage incorrect
@@ -469,6 +617,11 @@ class _GameScreenState extends State<GameScreen> {
                       const SizedBox(height: 16),
                   itemBuilder: (context, index) {
                     final challenge = _challenges[index];
+                    final gameSession = widget.gameFacade.currentGameSession;
+                    final gameSessionId = gameSession?.id ?? '';
+                    // ✅ FIX: Utiliser _getCurrentPlayerTeamColor() pour obtenir
+                    // la couleur depuis la session (pas depuis currentPlayer qui peut être null)
+                    final teamColor = _getCurrentPlayerTeamColor();
 
                     // Afficher DrawerView ou GuesserView selon la phase
                     if (gamePhase == 'drawing') {
@@ -476,12 +629,13 @@ class _GameScreenState extends State<GameScreen> {
                         key: ValueKey('challenge_card_${challenge.id}'),
                         index: index,
                         totalChallenges: _challenges.length,
-                        child: _DrawerView(
+                        child: DrawerView(
                           key: ValueKey('drawer_${challenge.id}'),
                           challenge: challenge,
-                          gameFacade: widget.gameFacade,
+                          gameSessionId: gameSessionId,
                           onImageGenerated: () => setState(() {}),
                           onScoreDelta: _applyScoreDelta,
+                          drawerTeamColor: teamColor,
                         ),
                       );
                     } else {
@@ -489,13 +643,15 @@ class _GameScreenState extends State<GameScreen> {
                         key: ValueKey('challenge_card_${challenge.id}'),
                         index: index,
                         totalChallenges: _challenges.length,
-                        child: _GuesserView(
+                        child: GuesserView(
                           key: ValueKey('guesser_${challenge.id}'),
                           challenge: challenge,
-                          gameFacade: widget.gameFacade,
+                          gameSessionId: gameSessionId,
+                          onSubmitAnswer: widget.gameFacade.answerChallenge,
                           onScoreDelta: _applyScoreDelta,
                           onChallengeResolved: _onChallengeResolved,
                           isResolved: _resolvedChallengeIds.contains(challenge.id),
+                          guesserTeamColor: teamColor,
                         ),
                       );
                     }
@@ -824,621 +980,6 @@ class _ChallengeCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Vue pour le dessinateur (drawer)
-class _DrawerView extends StatefulWidget {
-  final models.Challenge challenge;
-  final GameFacade gameFacade;
-  final VoidCallback onImageGenerated;
-  final Function(int) onScoreDelta;
-
-  const _DrawerView({
-    super.key,
-    required this.challenge,
-    required this.gameFacade,
-    required this.onImageGenerated,
-    required this.onScoreDelta,
-  });
-
-  @override
-  State<_DrawerView> createState() => _DrawerViewState();
-}
-
-class _DrawerViewState extends State<_DrawerView> {
-  final TextEditingController _promptController = TextEditingController();
-  String? _imageUrl;
-  bool _isGenerating = false;
-  int _regenCount = 0;
-  String? _promptError;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialiser avec l'image existante si disponible
-    _imageUrl = widget.challenge.imageUrl;
-    if (widget.challenge.prompt != null) {
-      _promptController.text = widget.challenge.prompt!;
-    }
-  }
-
-  @override
-  void didUpdateWidget(_DrawerView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Mettre à jour l'image si le challenge a changé
-    if (oldWidget.challenge.id != widget.challenge.id ||
-        oldWidget.challenge.imageUrl != widget.challenge.imageUrl) {
-      setState(() {
-        _imageUrl = widget.challenge.imageUrl;
-        if (widget.challenge.prompt != null && widget.challenge.prompt != _promptController.text) {
-          _promptController.text = widget.challenge.prompt!;
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _promptController.dispose();
-    super.dispose();
-  }
-
-  bool _validatePrompt(String prompt) {
-    if (prompt.trim().isEmpty) {
-      setState(() => _promptError = 'Le prompt ne peut pas être vide');
-      return false;
-    }
-
-    if (widget.challenge.promptContainsForbiddenWords(prompt)) {
-      setState(() => _promptError = 'Le prompt contient des mots interdits !');
-      return false;
-    }
-
-    setState(() => _promptError = null);
-    return true;
-  }
-
-  Future<void> _generateImage({bool isRegen = false}) async {
-    final prompt = _promptController.text.trim();
-
-    if (!_validatePrompt(prompt)) {
-      return;
-    }
-
-    setState(() {
-      _isGenerating = true;
-      _promptError = null;
-    });
-
-    try {
-      final gameSession = widget.gameFacade.currentGameSession;
-      if (gameSession == null) {
-        throw Exception('Aucune session de jeu active');
-      }
-
-      // Rafraîchir l'état de la game session pour avoir la phase à jour
-      await widget.gameFacade.refreshGameSession(gameSession.id);
-
-      // Récupérer la session mise à jour
-      final updatedSession = widget.gameFacade.currentGameSession;
-      if (updatedSession == null) {
-        throw Exception('Impossible de récupérer l\'état de la session');
-      }
-
-      // Vérifier que la session est en phase "drawing" (null = drawing par défaut)
-      final gamePhase = updatedSession.gamePhase ?? 'drawing';
-
-      if (gamePhase != 'drawing' && gamePhase != 'playing') {
-        throw Exception('La phase de jeu ne permet plus de générer d\'images (phase: $gamePhase).\nVeuillez générer toutes les images avant que le jeu ne commence.');
-      }
-
-      // Générer l'image via l'API
-      final imageUrl = await StableDiffusionService.generateImageWithRetry(
-        prompt,
-        updatedSession.id,
-        widget.challenge.id,
-      );
-
-      setState(() {
-        _imageUrl = imageUrl;
-        _isGenerating = false;
-        if (isRegen) {
-          _regenCount++;
-          widget.onScoreDelta(-10); // Coût de régénération
-        }
-      });
-
-      // ✅ FIX: Pas besoin de refresh backend - l'URL est déjà récupérée localement
-      // Retirer cet appel évite les erreurs si la phase a changé pendant la génération
-      // await widget.gameFacade.refreshMyChallenges(); // ❌ SUPPRIMÉ
-
-      widget.onImageGenerated();
-      AppLogger.success('[DrawerView] Image générée avec succès');
-    } catch (e) {
-      AppLogger.error('[DrawerView] Erreur génération image', e);
-      setState(() {
-        _isGenerating = false;
-        _promptError = 'Erreur: ${e.toString()}';
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors de la génération: ${e.toString()}'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Challenge à illustrer
-        Card(
-          color: AppTheme.primaryColor.withValues(alpha: 0.1),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Challenge à illustrer:',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.challenge.fullPhrase,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: AppTheme.primaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Mots interdits avec chips
-                Row(
-                  children: [
-                    Icon(Icons.block, color: AppTheme.errorColor, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Mots interdits:',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppTheme.errorColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: widget.challenge.allForbiddenWords.map((word) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppTheme.errorColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppTheme.errorColor,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Text(
-                        word,
-                        style: TextStyle(
-                          color: AppTheme.errorColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Input pour le prompt
-        TextField(
-          controller: _promptController,
-          decoration: InputDecoration(
-            labelText: 'Votre prompt pour l\'IA',
-            hintText: 'Décrivez l\'image sans utiliser les mots interdits...',
-            errorText: _promptError,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.auto_awesome),
-              onPressed: _isGenerating ? null : () => _generateImage(),
-              tooltip: 'Générer l\'image',
-            ),
-          ),
-          maxLines: 3,
-          enabled: !_isGenerating,
-        ),
-        const SizedBox(height: 12),
-
-        // Zone d'affichage de l'image
-        SizedBox(
-          height: 300, // Hauteur fixe pour le scroll
-          child: _imageUrl == null
-              ? Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: _isGenerating
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
-                              Text('Génération de l\'image en cours...'),
-                            ],
-                          ),
-                        )
-                      : Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.image_outlined,
-                                size: 64,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Écrivez un prompt et générez l\'image',
-                                style: TextStyle(color: Colors.grey[600]),
-                              ),
-                            ],
-                          ),
-                        ),
-                )
-              : Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: _imageUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (context, url) =>
-                            const Center(child: CircularProgressIndicator()),
-                        errorWidget: (context, url, error) => const Center(
-                          child: Icon(Icons.broken_image, size: 48),
-                        ),
-                      ),
-                    ),
-                    if (_isGenerating)
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 12),
-
-        // Bouton régénération
-        ElevatedButton.icon(
-          onPressed: _regenCount < 2 && !_isGenerating && _imageUrl != null
-              ? () => _generateImage(isRegen: true)
-              : null,
-          icon: const Icon(Icons.refresh),
-          label: Text('Régénérer (${2 - _regenCount})'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 44),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Vue pour le devineur (guesser)
-class _GuesserView extends StatefulWidget {
-  final models.Challenge challenge;
-  final GameFacade gameFacade;
-  final Function(int) onScoreDelta;
-  final Function(String) onChallengeResolved;
-  final bool isResolved;
-
-  const _GuesserView({
-    super.key,
-    required this.challenge,
-    required this.gameFacade,
-    required this.onScoreDelta,
-    required this.onChallengeResolved,
-    required this.isResolved,
-  });
-
-  @override
-  State<_GuesserView> createState() => _GuesserViewState();
-}
-
-class _GuesserViewState extends State<_GuesserView> {
-  final TextEditingController _guessController = TextEditingController();
-  bool _isSubmitting = false;
-  final List<String> _previousGuesses = [];
-
-  @override
-  void dispose() {
-    _guessController.dispose();
-    super.dispose();
-  }
-
-  bool _checkAnswer(String guess) {
-    final guessLower = guess.toLowerCase().trim();
-
-    // Vérifier si la réponse contient input1 ou input2
-    return widget.challenge.targetWords.any(
-      (target) => guessLower.contains(target.toLowerCase()),
-    );
-  }
-
-  Future<void> _submitGuess() async {
-    final guess = _guessController.text.trim();
-
-    if (guess.isEmpty) return;
-    if (_previousGuesses.contains(guess.toLowerCase())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vous avez déjà essayé cette réponse'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-      _previousGuesses.add(guess.toLowerCase());
-    });
-
-    try {
-      final isCorrect = _checkAnswer(guess);
-
-      // Envoyer la réponse à l'API
-      await widget.gameFacade.answerChallenge(
-        widget.gameFacade.currentGameSession!.id,
-        widget.challenge.id,
-        guess,
-        isCorrect,
-      );
-
-      if (isCorrect) {
-        widget.onScoreDelta(25); // +25 points pour bonne réponse
-        widget.onChallengeResolved(widget.challenge.id); // Marquer comme résolu
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Bravo ! Réponse correcte ! 🎉 Passez au challenge suivant',
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      } else {
-        widget.onScoreDelta(-1); // -1 point pour mauvaise réponse
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Raté ! Essayez encore (-1 point)'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
-        }
-      }
-
-      _guessController.clear();
-      setState(() => _isSubmitting = false);
-    } catch (e) {
-      AppLogger.error('[GuesserView] Erreur soumission réponse', e);
-      setState(() => _isSubmitting = false);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: ${e.toString()}'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = widget.challenge.imageUrl;
-    final isResolved = widget.isResolved;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Banner de succès si résolu
-        if (isResolved)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.green,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Challenge résolu ! ✓',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        if (isResolved) const SizedBox(height: 16),
-
-        // Info
-        Card(
-          color: isResolved
-              ? Colors.green.withValues(alpha: 0.1)
-              : AppTheme.primaryColor.withValues(alpha: 0.1),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  isResolved ? Icons.check_circle : Icons.search,
-                  color: isResolved ? Colors.green : AppTheme.primaryColor,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    isResolved
-                        ? 'Challenge terminé'
-                        : 'Devinez ce qui est représenté dans l\'image',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: isResolved ? Colors.green : AppTheme.primaryColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Zone d'affichage de l'image
-        SizedBox(
-          height: 300, // Hauteur fixe pour le scroll
-          child: imageUrl == null || imageUrl.isEmpty
-              ? Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 16),
-                        Text(
-                          'En attente de l\'image du dessinateur...',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: double.infinity,
-                    placeholder: (context, url) =>
-                        const Center(child: CircularProgressIndicator()),
-                    errorWidget: (context, url, error) =>
-                        const Center(child: Icon(Icons.broken_image, size: 48)),
-                  ),
-                ),
-        ),
-        const SizedBox(height: 16),
-
-        // Tentatives précédentes
-        if (_previousGuesses.isNotEmpty) ...[
-          Text(
-            'Tentatives précédentes:',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: _previousGuesses.map((guess) {
-              return Chip(
-                label: Text(guess),
-                deleteIcon: const Icon(Icons.close, size: 16),
-                onDeleted: null,
-                backgroundColor: Colors.red.withValues(alpha: 0.1),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-        ],
-
-        // Input pour deviner
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _guessController,
-                decoration: InputDecoration(
-                  hintText: isResolved ? 'Challenge résolu ✓' : 'Votre réponse...',
-                  labelText: isResolved ? 'Terminé' : 'Que voyez-vous dans l\'image ?',
-                ),
-                enabled: !_isSubmitting && imageUrl != null && !isResolved,
-                onSubmitted: (_) => _submitGuess(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton.icon(
-              onPressed: !_isSubmitting && imageUrl != null && !isResolved
-                  ? _submitGuess
-                  : null,
-              icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(isResolved ? Icons.check : Icons.send),
-              label: Text(isResolved ? 'Validé' : 'Valider'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isResolved ? Colors.green : AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }
