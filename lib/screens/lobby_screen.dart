@@ -71,11 +71,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
     });
   }
 
+  /// ✅ SOLID: Utilise session.isPlayerHost() comme source unique de vérité
   bool get _isHost {
     final currentPlayer = widget.gameFacade.currentPlayer;
-    return currentPlayer != null &&
-        _gameSession.players.any((player) => 
-            player.id == currentPlayer.id && player.isHost == true);
+    if (currentPlayer == null) return false;
+    return _gameSession.isPlayerHost(currentPlayer.id);
   }
 
   bool _canStartGame() {
@@ -608,7 +608,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
           if (isCurrentPlayer)
             Icon(Icons.check_circle, color: teamColor, size: 16),
-          if (player != null && player.isHost == true)
+          // ✅ SOLID: Utilise session.isPlayerHost() comme source unique de vérité
+          if (player != null && _gameSession.isPlayerHost(player.id))
             const Icon(Icons.star, color: Colors.amber, size: 16),
         ],
       ),

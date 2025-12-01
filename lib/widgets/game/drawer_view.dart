@@ -11,15 +11,29 @@ import '../../utils/logger.dart';
 class DrawerView extends StatefulWidget {
   final models.Challenge challenge;
   final String gameSessionId;
-  final Function(int) onScoreDelta;
-  final VoidCallback onChallengeComplete;
+
+  /// Callback pour appliquer un delta de score
+  /// [delta] : points à ajouter (négatif pour retirer)
+  /// [teamColor] : optionnel, la couleur de l'équipe à impacter ('red' ou 'blue')
+  final Function(int delta, {String? teamColor}) onScoreDelta;
+
+  /// Callback appelé quand une image est générée avec succès
+  final VoidCallback onImageGenerated;
+
+  /// Couleur de l'équipe du drawer (pour les pénalités de régénération)
+  final String? drawerTeamColor;
+
+  /// Image URL initiale (si déjà générée)
+  final String? initialImageUrl;
 
   const DrawerView({
     super.key,
     required this.challenge,
     required this.gameSessionId,
     required this.onScoreDelta,
-    required this.onChallengeComplete,
+    required this.onImageGenerated,
+    this.drawerTeamColor,
+    this.initialImageUrl,
   });
 
   @override
@@ -34,6 +48,30 @@ class _DrawerViewState extends State<DrawerView> {
   bool _isGenerating = false;
   int _regenCount = 0;
   String? _promptError;
+
+  @override
+  void initState() {
+    super.initState();
+    _imageUrl = widget.initialImageUrl ?? widget.challenge.imageUrl;
+    if (widget.challenge.prompt != null) {
+      _promptController.text = widget.challenge.prompt!;
+    }
+  }
+
+  @override
+  void didUpdateWidget(DrawerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.challenge.id != widget.challenge.id ||
+        oldWidget.challenge.imageUrl != widget.challenge.imageUrl) {
+      setState(() {
+        _imageUrl = widget.challenge.imageUrl;
+        if (widget.challenge.prompt != null &&
+            widget.challenge.prompt != _promptController.text) {
+          _promptController.text = widget.challenge.prompt!;
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -71,10 +109,20 @@ class _DrawerViewState extends State<DrawerView> {
         _isGenerating = false;
         if (isRegen) {
           _regenCount++;
-          widget.onScoreDelta(-10); // Coût de régénération
+          // Appliquer le coût de régénération avec l'équipe explicite
+          if (widget.drawerTeamColor != null) {
+            AppLogger.info(
+                '[DrawerView] 💸 Régénération: -10 pts pour équipe ${widget.drawerTeamColor}');
+            widget.onScoreDelta(-10, teamColor: widget.drawerTeamColor);
+          } else {
+            AppLogger.warning(
+                '[DrawerView] 💸 Régénération: -10 pts (équipe non spécifiée)');
+            widget.onScoreDelta(-10);
+          }
         }
       });
 
+      widget.onImageGenerated();
       AppLogger.success('[DrawerView] Image générée avec succès');
     } catch (e) {
       AppLogger.error('[DrawerView] Erreur génération image', e);
@@ -94,119 +142,133 @@ class _DrawerViewState extends State<DrawerView> {
     }
   }
 
-  void _sendToGuesser() {
-    if (_imageUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vous devez d\'abord générer une image'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    AppLogger.success('[DrawerView] Image envoyée au devineur');
-    widget.onChallengeComplete();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Challenge à illustrer
-        Card(
-          color: AppTheme.primaryColor.withValues(alpha: 0.1),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Challenge à illustrer:',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.challenge.fullPhrase,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: AppTheme.primaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '⚠️ Ne pas utiliser: ${widget.challenge.allForbiddenWords.join(", ")}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.errorColor,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        _buildChallengeCard(context),
         const SizedBox(height: 16),
 
         // Input pour le prompt
-        TextField(
-          controller: _promptController,
-          decoration: InputDecoration(
-            labelText: 'Votre prompt pour l\'IA',
-            hintText: 'Décrivez l\'image sans utiliser les mots interdits...',
-            errorText: _promptError,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.auto_awesome),
-              onPressed: _isGenerating ? null : () => _generateImage(),
-              tooltip: 'Générer l\'image',
-            ),
-          ),
-          maxLines: 3,
-          enabled: !_isGenerating,
-        ),
+        _buildPromptInput(),
         const SizedBox(height: 12),
 
         // Zone d'affichage de l'image
-        Expanded(
+        SizedBox(
+          height: 300,
           child: _buildImageArea(),
         ),
         const SizedBox(height: 12),
 
-        // Boutons d'action
-        Row(
+        // Bouton régénération avec coût affiché
+        _buildRegenerateButton(),
+      ],
+    );
+  }
+
+  Widget _buildChallengeCard(BuildContext context) {
+    return Card(
+      color: AppTheme.primaryColor.withValues(alpha: 0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _regenCount < 2 && !_isGenerating && _imageUrl != null
-                    ? () => _generateImage(isRegen: true)
-                    : null,
-                icon: const Icon(Icons.refresh),
-                label: Text('Régénérer (${2 - _regenCount})'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-              ),
+            Text(
+              'Challenge à illustrer:',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: ElevatedButton.icon(
-                onPressed: _imageUrl != null && !_isGenerating ? _sendToGuesser : null,
-                icon: const Icon(Icons.send),
-                label: const Text('Envoyer au devineur'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
+            const SizedBox(height: 8),
+            Text(
+              widget.challenge.fullPhrase,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: AppTheme.primaryColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            // Mots interdits avec chips
+            Row(
+              children: [
+                Icon(Icons.block, color: AppTheme.errorColor, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Mots interdits:',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppTheme.errorColor,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
-              ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: widget.challenge.allForbiddenWords.map((word) {
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppTheme.errorColor,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    word,
+                    style: TextStyle(
+                      color: AppTheme.errorColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ],
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildPromptInput() {
+    return TextField(
+      controller: _promptController,
+      decoration: InputDecoration(
+        labelText: 'Votre prompt pour l\'IA',
+        hintText: 'Décrivez l\'image sans utiliser les mots interdits...',
+        errorText: _promptError,
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.auto_awesome),
+          onPressed: _isGenerating ? null : () => _generateImage(),
+          tooltip: 'Générer l\'image',
+        ),
+      ),
+      maxLines: 3,
+      enabled: !_isGenerating,
+    );
+  }
+
+  Widget _buildRegenerateButton() {
+    return ElevatedButton.icon(
+      onPressed: _regenCount < 2 && !_isGenerating && _imageUrl != null
+          ? () => _generateImage(isRegen: true)
+          : null,
+      icon: const Icon(Icons.refresh),
+      label: Text('Régénérer (${2 - _regenCount} restant) -10 pts'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.orange,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(double.infinity, 44),
+      ),
     );
   }
 

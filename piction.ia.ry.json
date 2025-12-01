@@ -1,0 +1,363 @@
+{
+  "info": {
+    "name": "Piction.ia.ry",
+    "_postman_id": "f7c1a3b0-76e2-4f6b-9c90-collection-demo-fr",
+    "description": "Collection Postman pour l'API de sessions de jeu.\n\nFlux conseillé :\n1) Players > Create Player\n2) Auth > Login (stocke automatiquement {{jwt}})\n3) Me > Get Me (stocke {{playerId}})\n4) Game Sessions > Create Session (stocke {{gameSessionId}})\n5) Game Sessions > Join Session (choisir {{color}})\n6) Game Sessions > Start Session\n7) Challenges > Send Challenge (répétez jusqu’à 3 par joueur)\n8) Challenges > Get My Challenges (mode drawing) puis Draw\n9) Challenges > Get My Challenges To Guess (mode guessing) puis Answer\n10) Game Sessions > List Challenges (mode finished)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "name", "value": "alice", "type": "string" },
+    { "key": "password", "value": "S3cret!pass", "type": "string" },
+    { "key": "jwt", "value": "", "type": "string" },
+    { "key": "playerId", "value": "", "type": "string" },
+    { "key": "gameSessionId", "value": "", "type": "string" },
+    { "key": "challengeId", "value": "", "type": "string" },
+    { "key": "color", "value": "red", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Create Player (POST /players)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/players",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "description": "Crée un joueur avec mot de passe. Stocke playerId si l'API retourne un champ id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 or 200', function () {",
+                  "  pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  if (data && (data.id || data._id)) {",
+                  "    pm.collectionVariables.set('playerId', data.id || data._id);",
+                  "  }",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (POST /login) → sets {{jwt}}",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "description": "Retourne un JWT. Le script de test stocke automatiquement {{jwt}} depuis 'jwt' ou 'token' dans la réponse."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let token;",
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  token = data.jwt || data.token || data.access_token;",
+                  "} catch (e) { token = undefined; }",
+                  "pm.test('JWT présent', function () {",
+                  "  pm.expect(token, 'jwt/token manquant dans la réponse').to.be.a('string');",
+                  "});",
+                  "if (token) { pm.collectionVariables.set('jwt', token); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Me",
+      "item": [
+        {
+          "name": "Get Me (GET /me) → sets {{playerId}}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/me",
+            "description": "Retourne les détails du joueur propriétaire du JWT."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const id = data.id || data._id || (data.player && (data.player.id || data.player._id));",
+                  "  if (id) { pm.collectionVariables.set('playerId', id); }",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Player by ID (GET /players/{id})",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/players/{{playerId}}",
+            "description": "Détail d'un joueur via son id."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Game Sessions",
+      "item": [
+        {
+          "name": "Create Session (POST /game_sessions) → sets {{gameSessionId}}",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/game_sessions",
+            "description": "Crée une session de jeu. Doit retourner l'id de la session.",
+            "body": { "mode": "raw", "raw": "" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 or 200', function () {",
+                  "  pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const id = data.id || data._id || data.gameSessionId;",
+                  "  if (id) pm.collectionVariables.set('gameSessionId', id);",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Join Session (POST /game_sessions/{id}/join)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/join",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color\": \"{{color}}\"\n}"
+            },
+            "description": "Rejoint la session avec une couleur (\"red\" ou \"blue\")."
+          }
+        },
+        {
+          "name": "Leave Session (GET /game_sessions/{id}/leave)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/leave",
+            "description": "Quitte la session de jeu."
+          }
+        },
+        {
+          "name": "Get Session (GET /game_sessions/{id})",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}",
+            "description": "Détails de la session."
+          }
+        },
+        {
+          "name": "Get Session Status (GET /game_sessions/{id}/status)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/status",
+            "description": "Retourne { status: [\"lobby\", \"challenge\", \"drawing\", \"guessing\", \"finished\"] }."
+          }
+        },
+        {
+          "name": "Start Session (POST /game_sessions/{id}/start)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/start",
+            "description": "Passe de \"lobby\" à \"challenge\" et lance la phase de jeu dans 3 minutes.",
+            "body": { "mode": "raw", "raw": "" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Challenges",
+      "item": [
+        {
+          "name": "Send Challenge (POST /game_sessions/{id}/challenges)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/challenges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_word\": \"une\",\n  \"second_word\": \"poule\",\n  \"third_word\": \"sur\",\n  \"fourth_word\": \"un\",\n  \"fifth_word\": \"mur\",\n  \"forbidden_words\": [\"volaille\", \"brique\", \"poulet\"]\n}"
+            },
+            "description": "Envoie un challenge. Quand tous les joueurs en ont envoyé 3, le statut passe à \"drawing\"."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const id = data.id || data._id || data.challengeId;",
+                  "  if (id) pm.collectionVariables.set('challengeId', id);",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Challenges (GET /game_sessions/{gameSessionId}/myChallenges) → sets {{challengeId}}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/myChallenges",
+            "description": "Récupère les challenges assignés pour dessin (mode \"drawing\")."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const first = Array.isArray(data) ? data[0] : (data && data.items && data.items[0]);",
+                  "  const id = first && (first.id || first._id || first.challengeId);",
+                  "  if (id) pm.collectionVariables.set('challengeId', id);",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Draw for Challenge (POST /api/game_sessions/{gameSessionId}/challenges/{challengeId}/draw)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/game_sessions/{{gameSessionId}}/challenges/{{challengeId}}/draw",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Une vache sur un camion\"\n}"
+            },
+            "description": "Soumet un dessin (ou prompt) pour un challenge."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const id = data.id || data._id || data.challengeId;",
+                  "  if (id) pm.collectionVariables.set('challengeId', id);",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Challenges To Guess (GET /game_sessions/{gameSessionId}/myChallengesToGuess) → sets {{challengeId}}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/myChallengesToGuess",
+            "description": "Récupère la liste des challenges à deviner (mode \"guessing\")."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  const data = pm.response.json();",
+                  "  const first = Array.isArray(data) ? data[0] : (data && data.items && data.items[0]);",
+                  "  const id = first && (first.id || first._id || first.challengeId);",
+                  "  if (id) pm.collectionVariables.set('challengeId', id);",
+                  "} catch (e) { /* no-op */ }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Answer Challenge (POST /game_sessions/{gameSessionId}/challenges/{challengeId}/answer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/challenges/{{challengeId}}/answer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"Une vache sur un camion\",\n  \"is_resolved\": true\n}"
+            },
+            "description": "Envoie une réponse (peut être appelé plusieurs fois)."
+          }
+        },
+        {
+          "name": "List Session Challenges (GET /game_sessions/{gameSessionId}/challenges) [finished only]",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/game_sessions/{{gameSessionId}}/challenges",
+            "description": "Liste les challenges d'une session (uniquement en mode \"finished\")."
+          }
+        }
+      ]
+    }
+  ]
+}

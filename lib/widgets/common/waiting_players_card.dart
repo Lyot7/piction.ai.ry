@@ -114,7 +114,7 @@ class WaitingPlayersCard extends StatelessWidget {
                         boxShadow: !isReady
                             ? [
                                 BoxShadow(
-                                  color: statusColor.withOpacity(0.5),
+                                  color: statusColor.withValues(alpha: 0.5),
                                   blurRadius: 4,
                                   spreadRadius: 1,
                                 ),
@@ -129,8 +129,8 @@ class WaitingPlayersCard extends StatelessWidget {
                     CircleAvatar(
                       radius: 16,
                       backgroundColor: player.color == 'red'
-                          ? Colors.red.withOpacity(0.2)
-                          : Colors.blue.withOpacity(0.2),
+                          ? Colors.red.withValues(alpha: 0.2)
+                          : Colors.blue.withValues(alpha: 0.2),
                       child: Icon(
                         Icons.person,
                         size: 20,
@@ -167,7 +167,7 @@ class WaitingPlayersCard extends StatelessWidget {
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),

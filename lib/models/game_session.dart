@@ -13,6 +13,7 @@ class GameSession {
   final String? gamePhase; // "drawing" ou "guessing" (uniquement en "playing")
   final DateTime? createdAt;
   final DateTime? startedAt;
+  final String? hostId; // ID du joueur qui a créé la room (host)
 
   const GameSession({
     required this.id,
@@ -23,6 +24,7 @@ class GameSession {
     this.gamePhase,
     this.createdAt,
     this.startedAt,
+    this.hostId,
   });
 
   factory GameSession.fromJson(Map<String, dynamic> json) {
@@ -156,6 +158,10 @@ class GameSession {
       AppLogger.log('[GameSession] Player: ${p.name} (${p.id}), color=${p.color}, challengesSent=${p.challengesSent}');
     }
 
+    // ✅ FIX: Parser le hostId depuis le backend (plusieurs noms possibles)
+    final hostId = (json['host_id'] ?? json['hostId'] ?? json['created_by'] ?? json['createdBy'])?.toString();
+    AppLogger.log('[GameSession] 👑 Host ID from backend: $hostId');
+
     return GameSession(
       id: (json['id'] ?? json['_id'] ?? json['gameSessionId'] ?? '').toString(),
       status: json['status'] ?? 'lobby',
@@ -173,6 +179,7 @@ class GameSession {
           : json['started_at'] != null
               ? DateTime.tryParse(json['started_at'])
               : null,
+      hostId: hostId,
     );
   }
 
@@ -186,6 +193,7 @@ class GameSession {
       if (gamePhase != null) 'gamePhase': gamePhase,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
+      if (hostId != null) 'hostId': hostId,
     };
   }
 
@@ -198,6 +206,7 @@ class GameSession {
     String? gamePhase,
     DateTime? createdAt,
     DateTime? startedAt,
+    String? hostId,
   }) {
     return GameSession(
       id: id ?? this.id,
@@ -208,6 +217,7 @@ class GameSession {
       gamePhase: gamePhase ?? this.gamePhase,
       createdAt: createdAt ?? this.createdAt,
       startedAt: startedAt ?? this.startedAt,
+      hostId: hostId ?? this.hostId,
     );
   }
 
@@ -224,6 +234,18 @@ class GameSession {
 
   /// Vérifie si la session est terminée
   bool get isFinished => status == 'finished';
+
+  /// ✅ SOLID: Single Source of Truth pour le host
+  /// Vérifie si un joueur est le host de la session
+  bool isPlayerHost(String? playerId) {
+    if (playerId == null || hostId == null) return false;
+    return playerId == hostId;
+  }
+
+  /// Retourne le joueur host de la session
+  Player? get host => hostId != null
+      ? players.where((p) => p.id == hostId).firstOrNull
+      : null;
 
   /// Retourne le score d'une équipe
   int getTeamScore(String teamColor) => teamScores[teamColor] ?? 100;

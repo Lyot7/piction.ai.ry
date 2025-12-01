@@ -7,7 +7,7 @@ import 'results_screen.dart';
 /// Écran d'attente après avoir répondu à tous les challenges (phase guessing)
 ///
 /// Refactorisé pour utiliser GameWaitingScreen (principe DRY)
-class ValidationWaitingScreen extends StatelessWidget {
+class ValidationWaitingScreen extends StatefulWidget {
   final GameFacade gameFacade;
   final int scoreTeam1;
   final int scoreTeam2;
@@ -19,13 +19,18 @@ class ValidationWaitingScreen extends StatelessWidget {
     required this.scoreTeam2,
   });
 
+  @override
+  State<ValidationWaitingScreen> createState() => _ValidationWaitingScreenState();
+}
+
+class _ValidationWaitingScreenState extends State<ValidationWaitingScreen> {
   Future<bool> _checkIfFinished() async {
     try {
-      final gameSession = gameFacade.currentGameSession;
+      final gameSession = widget.gameFacade.currentGameSession;
       if (gameSession == null) return false;
 
-      await gameFacade.refreshGameSession(gameSession.id);
-      final updatedSession = gameFacade.currentGameSession;
+      await widget.gameFacade.refreshGameSession(gameSession.id);
+      final updatedSession = widget.gameFacade.currentGameSession;
       if (updatedSession == null) return false;
 
       final status = updatedSession.status;
@@ -35,6 +40,43 @@ class ValidationWaitingScreen extends StatelessWidget {
     } catch (e) {
       AppLogger.error('[ValidationWaitingScreen] Erreur vérification status', e);
       return false;
+    }
+  }
+
+  /// Récupère les scores finaux depuis le backend et navigue vers ResultsScreen
+  Future<void> _navigateToResults() async {
+    AppLogger.success('[ValidationWaitingScreen] Transition vers résultats');
+
+    // ✅ SYNC FINAL SCORES: Récupérer les scores finaux depuis le backend
+    int finalRedScore = widget.scoreTeam1;
+    int finalBlueScore = widget.scoreTeam2;
+
+    try {
+      final gameSession = widget.gameFacade.currentGameSession;
+      if (gameSession != null) {
+        await widget.gameFacade.refreshGameSession(gameSession.id);
+        final finalSession = widget.gameFacade.currentGameSession;
+        if (finalSession != null) {
+          finalRedScore = finalSession.teamScores['red'] ?? widget.scoreTeam1;
+          finalBlueScore = finalSession.teamScores['blue'] ?? widget.scoreTeam2;
+          AppLogger.info('[ValidationWaitingScreen] 🏆 Scores finaux backend - Red: $finalRedScore, Blue: $finalBlueScore');
+        }
+      }
+    } catch (e) {
+      AppLogger.error('[ValidationWaitingScreen] Erreur récupération scores finaux, utilisation scores passés', e);
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ResultsScreen(
+            gameFacade: widget.gameFacade,
+            scoreTeam1: finalRedScore,
+            scoreTeam2: finalBlueScore,
+          ),
+        ),
+      );
     }
   }
 
@@ -49,19 +91,7 @@ class ValidationWaitingScreen extends StatelessWidget {
       cardMessage: 'Validation des résultats',
       cardSubMessage: 'Nous attendons que tous les joueurs terminent leurs challenges',
       transitionCondition: _checkIfFinished,
-      onTransition: () {
-        AppLogger.success('[ValidationWaitingScreen] Transition vers résultats');
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ResultsScreen(
-              gameFacade: gameFacade,
-              scoreTeam1: scoreTeam1,
-              scoreTeam2: scoreTeam2,
-            ),
-          ),
-        );
-      },
+      onTransition: _navigateToResults,
     );
   }
 }

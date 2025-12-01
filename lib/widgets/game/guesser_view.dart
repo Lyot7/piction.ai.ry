@@ -1,26 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/challenge.dart' as models;
-import '../../managers/challenge_manager.dart';
 import '../../themes/app_theme.dart';
 import '../../utils/logger.dart';
+
+/// Callback type pour soumettre une réponse
+typedef SubmitAnswerCallback = Future<void> Function(
+  String gameSessionId,
+  String challengeId,
+  String answer,
+  bool isCorrect,
+);
 
 /// Widget pour la vue du devineur (guesser)
 /// Principe SOLID: Single Responsibility - Vue guesser uniquement
 class GuesserView extends StatefulWidget {
   final models.Challenge challenge;
   final String gameSessionId;
-  final ChallengeManager challengeManager;
-  final Function(int) onScoreDelta;
-  final VoidCallback onChallengeComplete;
+
+  /// Callback pour soumettre une réponse à l'API
+  final SubmitAnswerCallback onSubmitAnswer;
+
+  /// Callback pour appliquer un delta de score
+  /// [delta] : points à ajouter (négatif pour retirer)
+  /// [teamColor] : optionnel, la couleur de l'équipe à impacter ('red' ou 'blue')
+  final Function(int delta, {String? teamColor}) onScoreDelta;
+
+  /// Callback appelé quand le challenge est résolu
+  final Function(String challengeId) onChallengeResolved;
+
+  /// Indique si le challenge est déjà résolu
+  final bool isResolved;
+
+  /// Couleur de l'équipe du guesser (pour les points)
+  final String? guesserTeamColor;
 
   const GuesserView({
     super.key,
     required this.challenge,
     required this.gameSessionId,
-    required this.challengeManager,
+    required this.onSubmitAnswer,
     required this.onScoreDelta,
-    required this.onChallengeComplete,
+    required this.onChallengeResolved,
+    this.isResolved = false,
+    this.guesserTeamColor,
   });
 
   @override
@@ -42,9 +65,8 @@ class _GuesserViewState extends State<GuesserView> {
     final guessLower = guess.toLowerCase().trim();
 
     // Vérifier si la réponse contient input1 ou input2
-    return widget.challenge.targetWords.any((target) =>
-      guessLower.contains(target.toLowerCase())
-    );
+    return widget.challenge.targetWords
+        .any((target) => guessLower.contains(target.toLowerCase()));
   }
 
   Future<void> _submitGuess() async {
@@ -61,6 +83,13 @@ class _GuesserViewState extends State<GuesserView> {
       return;
     }
 
+    // Capturer la couleur de l'équipe avant les opérations async
+    final teamColor = widget.guesserTeamColor;
+    if (teamColor != null) {
+      AppLogger.info(
+          '[GuesserView] 🎯 Tentative par équipe $teamColor');
+    }
+
     setState(() {
       _isSubmitting = true;
       _previousGuesses.add(guess.toLowerCase());
@@ -70,7 +99,7 @@ class _GuesserViewState extends State<GuesserView> {
       final isCorrect = _checkAnswer(guess);
 
       // Envoyer la réponse à l'API
-      await widget.challengeManager.answerChallenge(
+      await widget.onSubmitAnswer(
         widget.gameSessionId,
         widget.challenge.id,
         guess,
@@ -78,23 +107,35 @@ class _GuesserViewState extends State<GuesserView> {
       );
 
       if (isCorrect) {
-        widget.onScoreDelta(25); // +25 points pour bonne réponse
+        // Appliquer les points avec l'équipe explicite
+        if (teamColor != null) {
+          AppLogger.info(
+              '[GuesserView] ✅ Bonne réponse: +25 pts pour équipe $teamColor');
+          widget.onScoreDelta(25, teamColor: teamColor);
+        } else {
+          widget.onScoreDelta(25);
+        }
+
+        widget.onChallengeResolved(widget.challenge.id);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Bravo ! Réponse correcte ! 🎉'),
+              content: Text('Bravo ! Réponse correcte ! 🎉 Passez au challenge suivant'),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 3),
             ),
           );
         }
-
-        // Attendre un peu puis passer au suivant
-        await Future.delayed(const Duration(seconds: 2));
-        widget.onChallengeComplete();
       } else {
-        widget.onScoreDelta(-1); // -1 point pour mauvaise réponse
+        // Appliquer la pénalité avec l'équipe explicite
+        if (teamColor != null) {
+          AppLogger.info(
+              '[GuesserView] ❌ Mauvaise réponse: -1 pt pour équipe $teamColor');
+          widget.onScoreDelta(-1, teamColor: teamColor);
+        } else {
+          widget.onScoreDelta(-1);
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -126,95 +167,151 @@ class _GuesserViewState extends State<GuesserView> {
   @override
   Widget build(BuildContext context) {
     final imageUrl = widget.challenge.imageUrl;
+    final isResolved = widget.isResolved;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Info
-        Card(
-          color: AppTheme.primaryColor.withValues(alpha: 0.1),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(Icons.search, color: AppTheme.primaryColor),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Devinez ce qui est représenté dans l\'image',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppTheme.primaryColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        // Banner de succès si résolu
+        if (isResolved) _buildSuccessBanner(),
+        if (isResolved) const SizedBox(height: 16),
+
+        // Info card
+        _buildInfoCard(context, isResolved),
         const SizedBox(height: 16),
 
         // Zone d'affichage de l'image
-        Expanded(
+        SizedBox(
+          height: 300,
           child: _buildImageArea(imageUrl),
         ),
         const SizedBox(height: 16),
 
         // Tentatives précédentes
         if (_previousGuesses.isNotEmpty) ...[
-          Text(
-            'Tentatives précédentes:',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppTheme.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: _previousGuesses.map((guess) {
-              return Chip(
-                label: Text(guess),
-                deleteIcon: const Icon(Icons.close, size: 16),
-                onDeleted: null,
-                backgroundColor: Colors.red.withValues(alpha: 0.1),
-              );
-            }).toList(),
-          ),
+          _buildPreviousGuesses(context),
           const SizedBox(height: 12),
         ],
 
         // Input pour deviner
-        Row(
+        _buildGuessInput(imageUrl, isResolved),
+      ],
+    );
+  }
+
+  Widget _buildSuccessBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.white),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Challenge résolu ! ✓',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(BuildContext context, bool isResolved) {
+    return Card(
+      color: isResolved
+          ? Colors.green.withValues(alpha: 0.1)
+          : AppTheme.primaryColor.withValues(alpha: 0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
-            Expanded(
-              child: TextField(
-                controller: _guessController,
-                decoration: const InputDecoration(
-                  hintText: 'Votre réponse...',
-                  labelText: 'Que voyez-vous dans l\'image ?',
-                ),
-                enabled: !_isSubmitting && imageUrl != null,
-                onSubmitted: (_) => _submitGuess(),
-              ),
+            Icon(
+              isResolved ? Icons.check_circle : Icons.search,
+              color: isResolved ? Colors.green : AppTheme.primaryColor,
             ),
             const SizedBox(width: 12),
-            ElevatedButton.icon(
-              onPressed: !_isSubmitting && imageUrl != null ? _submitGuess : null,
-              icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('Valider'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
+            Expanded(
+              child: Text(
+                isResolved
+                    ? 'Challenge terminé'
+                    : 'Devinez ce qui est représenté dans l\'image',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: isResolved ? Colors.green : AppTheme.primaryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviousGuesses(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Tentatives précédentes:',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: _previousGuesses.map((guess) {
+            return Chip(
+              label: Text(guess),
+              deleteIcon: const Icon(Icons.close, size: 16),
+              onDeleted: null,
+              backgroundColor: Colors.red.withValues(alpha: 0.1),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGuessInput(String? imageUrl, bool isResolved) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _guessController,
+            decoration: InputDecoration(
+              hintText: isResolved ? 'Challenge résolu ✓' : 'Votre réponse...',
+              labelText: isResolved ? 'Terminé' : 'Que voyez-vous dans l\'image ?',
+            ),
+            enabled: !_isSubmitting && imageUrl != null && !isResolved,
+            onSubmitted: (_) => _submitGuess(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton.icon(
+          onPressed:
+              !_isSubmitting && imageUrl != null && !isResolved ? _submitGuess : null,
+          icon: _isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(isResolved ? Icons.check : Icons.send),
+          label: Text(isResolved ? 'Validé' : 'Valider'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isResolved ? Colors.green : AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+          ),
         ),
       ],
     );

@@ -86,22 +86,4 @@ class RoleAssignment {
     return true;
   }
 
-  /// ⚠️ DEPRECATED - NE PAS UTILISER
-  ///
-  /// Cette fonction n'est plus nécessaire car le jeu fonctionne avec un seul cycle
-  /// et les rôles ne changent JAMAIS pendant la partie (flow simplifié).
-  ///
-  /// @deprecated Inutile avec le flow simplifié (1 cycle unique, pas d'inversion)
-  @Deprecated('Roles ne changent pas pendant la partie - flow simplifié')
-  static GameSession switchAllRoles(GameSession session) {
-    AppLogger.warning('[RoleAssignment] ⚠️ switchAllRoles() called but DEPRECATED - roles should NOT change');
-
-    final updatedPlayers = session.players.map((player) {
-      return player.toggleRole();
-    }).toList();
-
-    final updatedSession = session.copyWith(players: updatedPlayers);
-
-    return updatedSession;
-  }
 }

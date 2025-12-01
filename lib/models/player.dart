@@ -70,25 +70,6 @@ class Player {
     );
   }
 
-  /// ⚠️ DEPRECATED - NE PAS UTILISER
-  ///
-  /// Cette méthode n'est plus nécessaire car les rôles ne changent JAMAIS
-  /// pendant la partie (flow simplifié avec 1 cycle unique).
-  ///
-  /// @deprecated Roles fixes pendant toute la partie - pas d'inversion
-  @Deprecated('Roles ne changent pas pendant la partie - flow simplifié')
-  Player toggleRole() {
-    String? newRole;
-    if (role == 'drawer') {
-      newRole = 'guesser';
-    } else if (role == 'guesser') {
-      newRole = 'drawer';
-    } else {
-      newRole = role; // Garde le rôle actuel si invalide
-    }
-    return copyWith(role: newRole);
-  }
-
   /// Vérifie si le joueur est un dessinateur
   bool get isDrawer => role == 'drawer';
 

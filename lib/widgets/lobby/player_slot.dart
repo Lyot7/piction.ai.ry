@@ -3,11 +3,13 @@ import '../../models/player.dart';
 
 /// Widget pour afficher un slot de joueur dans une équipe
 /// Principe SOLID: Single Responsibility - Affichage d'un slot joueur
+/// ✅ SOLID: isHost est passé en paramètre (inversion de dépendance)
 class PlayerSlot extends StatelessWidget {
   final Player? player;
   final Color teamColor;
   final bool isCurrentPlayer;
   final bool isLoading;
+  final bool isHost; // ✅ SOLID: Reçu depuis le parent qui utilise session.isPlayerHost()
 
   const PlayerSlot({
     super.key,
@@ -15,6 +17,7 @@ class PlayerSlot extends StatelessWidget {
     required this.teamColor,
     this.isCurrentPlayer = false,
     this.isLoading = false,
+    this.isHost = false,
   });
 
   @override
@@ -145,7 +148,8 @@ class PlayerSlot extends StatelessWidget {
           ),
           if (isCurrentPlayer)
             Icon(Icons.check_circle, color: teamColor, size: 16),
-          if (player != null && player!.isHost == true)
+          // ✅ SOLID: Utilise le paramètre isHost au lieu de player.isHost
+          if (player != null && isHost)
             const Icon(Icons.star, color: Colors.amber, size: 16),
         ],
       ),

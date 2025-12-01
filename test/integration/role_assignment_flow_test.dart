@@ -92,60 +92,7 @@ void main() {
       debugPrint('\n✅ TEST PASSED: Role assignment workflow complet');
     });
 
-    test('SCENARIO: Roles switch correctly after challenge completion', () async {
-      // ===== SETUP: Session avec 4 joueurs et rôles assignés =====
-      final session = await mockApi.createGameSession();
-      await mockApi.joinGameSession(session.id, 'red');
-      await mockApi.joinGameSession(session.id, 'red');
-      await mockApi.joinGameSession(session.id, 'blue');
-      await mockApi.joinGameSession(session.id, 'blue');
-      await mockApi.startGameSession(session.id);
-
-      var currentSession = await mockApi.refreshGameSession(session.id);
-
-      debugPrint('\n📝 PHASE 1: Rôles initiaux');
-      final initialRedDrawer = currentSession.getTeamDrawer('red');
-      final initialRedGuesser = currentSession.getTeamGuesser('red');
-      final initialBlueDrawer = currentSession.getTeamDrawer('blue');
-      final initialBlueGuesser = currentSession.getTeamGuesser('blue');
-
-      expect(initialRedDrawer, isNotNull);
-      expect(initialRedGuesser, isNotNull);
-      debugPrint('✅ Red team: ${initialRedDrawer!.name} (drawer), ${initialRedGuesser!.name} (guesser)');
-      debugPrint('✅ Blue team: ${initialBlueDrawer!.name} (drawer), ${initialBlueGuesser!.name} (guesser)');
-
-      // ===== ACTION: Inverser les rôles (après challenge résolu) =====
-      debugPrint('\n📝 PHASE 2: Inversion des rôles');
-      currentSession = RoleAssignment.switchAllRoles(currentSession);
-      debugPrint('✅ Rôles inversés localement');
-
-      // ===== VÉRIFICATION: Les rôles sont inversés =====
-      final newRedDrawer = currentSession.getTeamDrawer('red');
-      final newRedGuesser = currentSession.getTeamGuesser('red');
-      final newBlueDrawer = currentSession.getTeamDrawer('blue');
-      final newBlueGuesser = currentSession.getTeamGuesser('blue');
-
-      expect(newRedDrawer!.id, equals(initialRedGuesser.id),
-        reason: 'Previous guesser should now be drawer');
-      expect(newRedGuesser!.id, equals(initialRedDrawer.id),
-        reason: 'Previous drawer should now be guesser');
-
-      expect(newBlueDrawer!.id, equals(initialBlueGuesser.id),
-        reason: 'Previous guesser should now be drawer');
-      expect(newBlueGuesser!.id, equals(initialBlueDrawer.id),
-        reason: 'Previous drawer should now be guesser');
-
-      debugPrint('✅ Red team: ${newRedDrawer.name} (drawer), ${newRedGuesser.name} (guesser)');
-      debugPrint('✅ Blue team: ${newBlueDrawer.name} (drawer), ${newBlueGuesser.name} (guesser)');
-
-      // ===== VÉRIFICATION: Les rôles restent valides après inversion =====
-      final rolesStillValid = RoleAssignment.areRolesValid(currentSession);
-      expect(rolesStillValid, isTrue,
-        reason: 'Role distribution should remain valid after switch');
-      debugPrint('✅ Distribution toujours valide après inversion');
-
-      debugPrint('\n✅ TEST PASSED: Role switching workflow');
-    });
+    // NOTE: Test "Roles switch correctly" supprimé - le flow simplifié n'utilise plus l'inversion des rôles
 
     test('SCENARIO: Local role assignment when backend does not assign roles', () async {
       // Ce test simule le cas où le backend ne renvoie PAS de rôles
@@ -258,47 +205,7 @@ void main() {
       debugPrint('\n✅ TEST PASSED: Incomplete session handling');
     });
 
-    test('SCENARIO: Multiple role switches maintain validity', () async {
-      // Test que les inversions successives maintiennent la validité
-
-      final session = await mockApi.createGameSession();
-      await mockApi.joinGameSession(session.id, 'red');
-      await mockApi.joinGameSession(session.id, 'red');
-      await mockApi.joinGameSession(session.id, 'blue');
-      await mockApi.joinGameSession(session.id, 'blue');
-      await mockApi.startGameSession(session.id);
-
-      var currentSession = await mockApi.refreshGameSession(session.id);
-
-      debugPrint('\n📝 Test d\'inversions multiples');
-
-      // Inverser 5 fois pour tester la robustesse
-      for (int i = 1; i <= 5; i++) {
-        debugPrint('\n🔄 Inversion #$i');
-
-        currentSession = RoleAssignment.switchAllRoles(currentSession);
-
-        // Vérifier que les rôles sont toujours valides
-        final stillValid = RoleAssignment.areRolesValid(currentSession);
-        expect(stillValid, isTrue,
-          reason: 'Roles should remain valid after $i switches');
-
-        debugPrint('   ✅ Distribution toujours valide');
-
-        // Vérifier que chaque équipe a toujours 1 drawer et 1 guesser
-        for (final teamColor in ['red', 'blue']) {
-          final drawer = currentSession.getTeamDrawer(teamColor);
-          final guesser = currentSession.getTeamGuesser(teamColor);
-
-          expect(drawer, isNotNull,
-            reason: 'Team $teamColor should have drawer after $i switches');
-          expect(guesser, isNotNull,
-            reason: 'Team $teamColor should have guesser after $i switches');
-        }
-      }
-
-      debugPrint('\n✅ TEST PASSED: Multiple switches maintain validity');
-    });
+    // NOTE: Test "Multiple role switches" supprimé - le flow simplifié n'utilise plus l'inversion des rôles
   });
 
   group('Integration - Edge Cases', () {
