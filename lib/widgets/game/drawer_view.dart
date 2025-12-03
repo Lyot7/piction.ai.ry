@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../di/locator.dart';
+import '../../interfaces/image_api_interface.dart';
 import '../../models/challenge.dart' as models;
-import '../../repositories/image_repository.dart';
 import '../../themes/app_theme.dart';
 import '../../validators/prompt_validator.dart';
 import '../../utils/logger.dart';
@@ -42,7 +43,7 @@ class DrawerView extends StatefulWidget {
 
 class _DrawerViewState extends State<DrawerView> {
   final TextEditingController _promptController = TextEditingController();
-  final ImageRepository _imageRepository = ImageRepository();
+  IImageApi get _imageApi => Locator.get<IImageApi>();
 
   String? _imageUrl;
   bool _isGenerating = false;
@@ -98,10 +99,10 @@ class _DrawerViewState extends State<DrawerView> {
     });
 
     try {
-      final imageUrl = await _imageRepository.generateImage(
-        prompt,
+      final imageUrl = await _imageApi.generateImageWithRetry(
         widget.gameSessionId,
         widget.challenge.id,
+        prompt,
       );
 
       setState(() {

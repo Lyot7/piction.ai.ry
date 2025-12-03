@@ -1,23 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piction_ai_ry/models/challenge.dart';
 import 'package:piction_ai_ry/services/challenge_state_manager.dart';
-import 'package:piction_ai_ry/services/game_facade.dart';
+import 'package:piction_ai_ry/interfaces/facades/challenge_facade_interface.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 
 import 'challenge_state_manager_test.mocks.dart';
 import '../../helpers/test_challenge_factory.dart';
 
-@GenerateMocks([GameFacade])
+@GenerateMocks([IChallengeFacade])
 void main() {
   group('ChallengeStateManager', () {
-    late MockGameFacade mockGameFacade;
+    late MockIChallengeFacade mockChallengeFacade;
     late ChallengeStateManager manager;
     late List<Challenge> testChallenges;
 
     setUp(() {
-      mockGameFacade = MockGameFacade();
-      manager = ChallengeStateManager(mockGameFacade);
+      mockChallengeFacade = MockIChallengeFacade();
+      manager = ChallengeStateManager(mockChallengeFacade);
 
       testChallenges = [
         TestChallengeFactory.create(
@@ -57,9 +57,9 @@ void main() {
     group('loadDrawingChallenges', () {
       test('should load drawing challenges successfully', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         await manager.loadDrawingChallenges();
@@ -68,14 +68,14 @@ void main() {
         expect(manager.state.challenges.length, 2);
         expect(manager.state.isLoading, false);
         expect(manager.state.errorMessage, null);
-        verify(mockGameFacade.refreshMyChallenges()).called(1);
+        verify(mockChallengeFacade.refreshMyChallenges()).called(1);
       });
 
       test('should set loading state while loading', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.delayed(const Duration(milliseconds: 100)));
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         final future = manager.loadDrawingChallenges();
@@ -89,7 +89,7 @@ void main() {
 
       test('should handle errors gracefully', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenThrow(Exception('Network error'));
 
         // Act
@@ -105,9 +105,9 @@ void main() {
     group('loadGuessingChallenges', () {
       test('should load guessing challenges successfully', () async {
         // Arrange
-        when(mockGameFacade.refreshChallengesToGuess())
+        when(mockChallengeFacade.refreshChallengesToGuess())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.challengesToGuess).thenReturn(testChallenges);
+        when(mockChallengeFacade.challengesToGuess).thenReturn(testChallenges);
 
         // Act
         await manager.loadGuessingChallenges();
@@ -115,12 +115,12 @@ void main() {
         // Assert
         expect(manager.state.challenges.length, 2);
         expect(manager.state.isLoading, false);
-        verify(mockGameFacade.refreshChallengesToGuess()).called(1);
+        verify(mockChallengeFacade.refreshChallengesToGuess()).called(1);
       });
 
       test('should handle errors gracefully', () async {
         // Arrange
-        when(mockGameFacade.refreshChallengesToGuess())
+        when(mockChallengeFacade.refreshChallengesToGuess())
             .thenThrow(Exception('API error'));
 
         // Act
@@ -135,9 +135,9 @@ void main() {
     group('refreshChallenges', () {
       test('should refresh challenges and return true on success', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         final success = await manager.refreshChallenges();
@@ -150,13 +150,13 @@ void main() {
 
       test('should return false on error and keep existing challenges', () async {
         // Arrange - Set initial challenges
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
         await manager.loadDrawingChallenges();
 
         // Arrange - Make refresh fail
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenThrow(Exception('Refresh error'));
 
         // Act
@@ -172,9 +172,9 @@ void main() {
     group('markChallengeAsResolved', () {
       test('should mark challenge as resolved', () {
         // Arrange - Load some challenges first
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         manager.markChallengeAsResolved('1');
@@ -200,9 +200,9 @@ void main() {
     group('updateImageUrl', () {
       test('should update image URL for challenge', () {
         // Arrange - Load challenges first
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         manager.updateImageUrl('1', 'https://example.com/image1.png');
@@ -213,9 +213,9 @@ void main() {
 
       test('should update challenge in list when image URL is set', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
         await manager.loadDrawingChallenges();
 
         // Act
@@ -246,9 +246,9 @@ void main() {
           ),
         ];
 
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(challengesWithImages);
+        when(mockChallengeFacade.myChallenges).thenReturn(challengesWithImages);
         await manager.loadDrawingChallenges();
 
         // Assert
@@ -274,9 +274,9 @@ void main() {
           ),
         ];
 
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(challengesWithImages);
+        when(mockChallengeFacade.myChallenges).thenReturn(challengesWithImages);
         await manager.loadDrawingChallenges();
 
         // Assert
@@ -285,9 +285,9 @@ void main() {
 
       test('allChallengesResolved should be true when all resolved', () async {
         // Arrange
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
         await manager.loadDrawingChallenges();
 
         // Act
@@ -302,9 +302,9 @@ void main() {
     group('reset', () {
       test('should reset state to initial', () async {
         // Arrange - Load some data
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
         await manager.loadDrawingChallenges();
         manager.markChallengeAsResolved('1');
 
@@ -324,9 +324,9 @@ void main() {
         int notificationCount = 0;
         manager.addListener(() => notificationCount++);
 
-        when(mockGameFacade.refreshMyChallenges())
+        when(mockChallengeFacade.refreshMyChallenges())
             .thenAnswer((_) async => Future.value());
-        when(mockGameFacade.myChallenges).thenReturn(testChallenges);
+        when(mockChallengeFacade.myChallenges).thenReturn(testChallenges);
 
         // Act
         await manager.loadDrawingChallenges();

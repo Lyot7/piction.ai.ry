@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/challenge_facade_interface.dart';
+import '../interfaces/facades/game_state_facade_interface.dart';
+import '../interfaces/facades/session_facade_interface.dart';
 import '../utils/logger.dart';
 import 'game_screen.dart';
 
 /// Écran de création des challenges avant le début du jeu
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 class ChallengeCreationScreen extends StatefulWidget {
-  final GameFacade gameFacade;
-
-  const ChallengeCreationScreen({
-    super.key,
-    required this.gameFacade,
-  });
+  const ChallengeCreationScreen({super.key});
 
   @override
   State<ChallengeCreationScreen> createState() => _ChallengeCreationScreenState();
@@ -400,11 +399,14 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     });
   }
 
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
+  IChallengeFacade get _challengeFacade => Locator.get<IChallengeFacade>();
+  IGameStateFacade get _gameStateFacade => Locator.get<IGameStateFacade>();
+
   Future<void> _submitChallenges() async {
     if (_formKey.currentState?.validate() == true) {
       try {
-        final gameService = widget.gameFacade;
-        final gameSessionId = gameService.currentGameSession!.id;
+        final gameSessionId = _sessionFacade.currentGameSession!.id;
 
         // Afficher le dialog d'attente AVANT l'envoi
         if (mounted) {
@@ -420,7 +422,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
             controllers[4].text.trim(),
           ];
 
-          await gameService.sendChallenge(
+          await _challengeFacade.sendChallenge(
             gameSessionId,              // gameSessionId
             _articles1[i],              // "Un" ou "Une"
             controllers[0].text.trim(), // input1 (objet)
@@ -432,12 +434,12 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
         }
 
         // Rafraîchir la session immédiatement après l'envoi
-        await gameService.refreshGameSession(gameSessionId);
+        await _sessionFacade.refreshGameSession(gameSessionId);
 
         // Attendre que tous les joueurs aient envoyé leurs challenges
         // Le backend passe de "challenge" à "playing" automatiquement
         if (mounted) {
-          await _waitForGameToStart(gameService);
+          await _waitForGameToStart();
         }
 
         // Navigation vers l'écran de jeu
@@ -446,9 +448,8 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => GameScreen(
-                gameFacade: widget.gameFacade,
-              ),
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const GameScreen(),
               transitionDuration: const Duration(milliseconds: 150),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(opacity: animation, child: child);
@@ -477,12 +478,15 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _WaitingDialog(gameFacade: widget.gameFacade),
+      builder: (context) => const _WaitingDialog(),
     );
   }
 
-  Future<void> _waitForGameToStart(GameFacade gameFacade) async {
+  Future<void> _waitForGameToStart() async {
     AppLogger.info('[ChallengeCreation] 🎬 Starting to wait for game to start');
+
+    // Démarrer l'auto-sync pour que statusStream soit alimenté
+    _gameStateFacade.startAutoSync();
 
     // Écouter le stream du statut pour une redirection temps-réel
     const maxWaitTime = Duration(minutes: 5);
@@ -493,7 +497,7 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
 
     // Écouter le stream du status
     late final StreamSubscription<String> statusSubscription;
-    statusSubscription = gameFacade.statusStream.listen((status) {
+    statusSubscription = _gameStateFacade.statusStream.listen((status) {
       AppLogger.info('[ChallengeCreation] 🔔 Status stream received: $status');
       // Le backend peut envoyer "playing" OU "drawing" pour indiquer que le jeu a commencé
       if ((status == 'playing' || status == 'drawing') && !completer.isCompleted) {
@@ -514,12 +518,23 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
           pollCount++;
           AppLogger.info('[ChallengeCreation] 🔄 Polling #$pollCount - Refreshing session...');
 
-          await gameFacade.refreshGameSession(gameFacade.currentGameSession!.id);
+          await _sessionFacade.refreshGameSession(_sessionFacade.currentGameSession!.id);
 
-          final session = gameFacade.currentGameSession;
+          // IMPORTANT: Synchroniser manuellement aussi (backup si auto-sync ne marche pas)
+          await _gameStateFacade.syncWithSession();
+
+          final session = _sessionFacade.currentGameSession;
           if (session != null) {
             final playersReady = session.players.where((p) => p.challengesSent >= 3).length;
-            AppLogger.info('[ChallengeCreation] 🔄 Poll #$pollCount - Status: ${session.status}, Players ready: $playersReady/${session.players.length}');
+            AppLogger.info('[ChallengeCreation] 🔄 Poll #$pollCount - Status: ${session.status}, Phase: ${session.gamePhase}, Players ready: $playersReady/${session.players.length}');
+
+            // Fallback: Vérifier directement le status de la session
+            // Si le backend a déjà passé à "playing", on peut naviguer même si le stream n'a pas émis
+            if ((session.status == 'playing' || session.gamePhase == 'drawing') && !completer.isCompleted) {
+              AppLogger.success('[ChallengeCreation] ✅ Session status is "${session.status}" (gamePhase: ${session.gamePhase}), completing via polling');
+              completer.complete();
+              break;
+            }
           }
 
           // Vérifier timeout
@@ -549,15 +564,14 @@ class _ChallengeCreationScreenState extends State<ChallengeCreationScreen> {
       await completer.future;
     } finally {
       statusSubscription.cancel();
+      _gameStateFacade.stopAutoSync();
     }
   }
 }
 
 /// Widget d'attente avec indicateur de progression
 class _WaitingDialog extends StatefulWidget {
-  final GameFacade gameFacade;
-
-  const _WaitingDialog({required this.gameFacade});
+  const _WaitingDialog();
 
   @override
   State<_WaitingDialog> createState() => _WaitingDialogState();
@@ -567,6 +581,8 @@ class _WaitingDialogState extends State<_WaitingDialog> {
   int _totalPlayers = 4;
   int _playersReady = 1; // Le joueur actuel est déjà prêt
   bool _isSubmitting = true; // Indicateur d'envoi en cours
+
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
 
   @override
   void initState() {
@@ -586,11 +602,11 @@ class _WaitingDialogState extends State<_WaitingDialog> {
     while (mounted) {
       try {
         // Récupérer la session pour avoir le statut en temps réel
-        await widget.gameFacade.refreshGameSession(
-          widget.gameFacade.currentGameSession!.id,
+        await _sessionFacade.refreshGameSession(
+          _sessionFacade.currentGameSession!.id,
         );
 
-        final session = widget.gameFacade.currentGameSession;
+        final session = _sessionFacade.currentGameSession;
         if (session != null) {
           final playerCount = session.players.length;
 

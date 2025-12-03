@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../models/challenge.dart';
-import '../services/game_facade.dart';
+import '../interfaces/facades/challenge_facade_interface.dart';
 import '../utils/logger.dart';
 
 /// État des challenges avec leurs métadonnées
@@ -63,11 +63,13 @@ class ChallengeState {
 ///
 /// Principe SOLID: Single Responsibility Principle
 /// Ce service gère UNE responsabilité: l'état des challenges
+///
+/// Migré vers IChallengeFacade (SOLID DIP) - n'utilise plus GameFacade
 class ChallengeStateManager extends ChangeNotifier {
-  final GameFacade _gameFacade;
+  final IChallengeFacade _challengeFacade;
   ChallengeState _state = const ChallengeState();
 
-  ChallengeStateManager(this._gameFacade);
+  ChallengeStateManager(this._challengeFacade);
 
   /// État actuel (read-only)
   ChallengeState get state => _state;
@@ -80,8 +82,8 @@ class ChallengeStateManager extends ChangeNotifier {
     _setState(_state.copyWith(isLoading: true));
 
     try {
-      await _gameFacade.refreshMyChallenges();
-      final challenges = _gameFacade.myChallenges;
+      await _challengeFacade.refreshMyChallenges();
+      final challenges = _challengeFacade.myChallenges;
 
       AppLogger.info('[ChallengeStateManager] ${challenges.length} challenges de dessin chargés');
 
@@ -104,8 +106,8 @@ class ChallengeStateManager extends ChangeNotifier {
     _setState(_state.copyWith(isLoading: true));
 
     try {
-      await _gameFacade.refreshChallengesToGuess();
-      final challenges = _gameFacade.challengesToGuess;
+      await _challengeFacade.refreshChallengesToGuess();
+      final challenges = _challengeFacade.challengesToGuess;
 
       AppLogger.info('[ChallengeStateManager] ${challenges.length} challenges à deviner chargés');
 
@@ -128,8 +130,8 @@ class ChallengeStateManager extends ChangeNotifier {
   /// Returns true si succès, false si échec
   Future<bool> refreshChallenges() async {
     try {
-      await _gameFacade.refreshMyChallenges();
-      final challenges = _gameFacade.myChallenges;
+      await _challengeFacade.refreshMyChallenges();
+      final challenges = _challengeFacade.myChallenges;
 
       AppLogger.info('[ChallengeStateManager] Challenges rafraîchis');
 

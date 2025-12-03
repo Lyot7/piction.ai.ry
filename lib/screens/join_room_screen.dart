@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_facade.dart';
-import '../services/deep_link_service.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/session_facade_interface.dart';
 import 'lobby_screen.dart';
 import 'qr_scanner_screen.dart';
 
 /// Écran pour rejoindre une room existante
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 class JoinRoomScreen extends StatefulWidget {
-  final GameFacade gameFacade;
-  final DeepLinkService? deepLinkService;
   final String? initialRoomId;
 
   const JoinRoomScreen({
     super.key,
-    required this.gameFacade,
-    this.deepLinkService,
     this.initialRoomId,
   });
 
@@ -28,10 +25,12 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
+
   @override
   void initState() {
     super.initState();
-    
+
     // Si un roomId initial est fourni (via deep linking), le pré-remplir
     if (widget.initialRoomId != null) {
       _searchController.text = widget.initialRoomId!;
@@ -60,10 +59,10 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
 
     try {
       // Rejoindre automatiquement une équipe disponible
-      await widget.gameFacade.joinAvailableTeam(roomId);
+      await _sessionFacade.joinAvailableTeam(roomId);
 
       // Récupérer la session mise à jour depuis le service
-      final updatedSession = widget.gameFacade.currentGameSession;
+      final updatedSession = _sessionFacade.currentGameSession;
 
       if (updatedSession == null) {
         throw Exception('Impossible de récupérer la session après le join');
@@ -74,7 +73,6 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) => LobbyScreen(
-              gameFacade: widget.gameFacade,
               gameSession: updatedSession,
             ),
             transitionDuration: const Duration(milliseconds: 150),

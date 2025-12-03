@@ -1,5 +1,6 @@
+import '../di/locator.dart';
+import '../interfaces/image_api_interface.dart';
 import '../models/challenge.dart';
-import '../services/stable_diffusion_service.dart';
 import '../utils/logger.dart';
 
 /// Résultat d'une génération d'images
@@ -41,7 +42,7 @@ class ImageGenerationService {
   final void Function(int, int)? onProgress;
 
   /// Fonction de génération d'images (injectable pour les tests)
-  /// Si null, utilise StableDiffusionService par défaut
+  /// Si null, utilise IImageApi via Locator par défaut
   /// ✅ IMPORTANT: Retourne l'URL de l'image générée
   final Future<String> Function(String prompt, String gameSessionId, String challengeId)? imageGenerator;
 
@@ -96,11 +97,14 @@ class ImageGenerationService {
         final prompt = promptGenerator?.call(challenge) ?? _defaultPromptGenerator(challenge);
 
         try {
-          // Générer l'image (utilise imageGenerator si fourni, sinon StableDiffusionService)
-          final generator = imageGenerator ?? StableDiffusionService.generateImageWithRetry;
-
-          // ✅ CRITIQUE: Capturer l'URL retournée par la génération
-          final generatedUrl = await generator(prompt, gameSessionId, challenge.id);
+          // Générer l'image (utilise imageGenerator si fourni, sinon IImageApi via Locator)
+          final String generatedUrl;
+          if (imageGenerator != null) {
+            generatedUrl = await imageGenerator!(prompt, gameSessionId, challenge.id);
+          } else {
+            final imageApi = Locator.get<IImageApi>();
+            generatedUrl = await imageApi.generateImageWithRetry(gameSessionId, challenge.id, prompt);
+          }
 
           // ✅ CRITIQUE: Stocker l'URL dans la map pour mise à jour locale
           generatedUrls[challenge.id] = generatedUrl;
@@ -161,9 +165,13 @@ class ImageGenerationService {
         return false;
       }
 
-      // Générer l'image (utilise imageGenerator si fourni, sinon StableDiffusionService)
-      final generator = imageGenerator ?? StableDiffusionService.generateImageWithRetry;
-      await generator(prompt, gameSessionId, challenge.id);
+      // Générer l'image (utilise imageGenerator si fourni, sinon IImageApi via Locator)
+      if (imageGenerator != null) {
+        await imageGenerator!(prompt, gameSessionId, challenge.id);
+      } else {
+        final imageApi = Locator.get<IImageApi>();
+        await imageApi.generateImageWithRetry(gameSessionId, challenge.id, prompt);
+      }
 
       AppLogger.success('[ImageGenerationService] Image générée pour challenge ${challenge.id}');
       return true;

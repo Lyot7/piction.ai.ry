@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/session_facade_interface.dart';
 import '../models/game_session.dart';
 import '../widgets/share_qr_widget.dart';
 import 'lobby_screen.dart';
 
 /// Écran de création d'une nouvelle room
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 class CreateRoomScreen extends StatefulWidget {
-  final GameFacade gameFacade;
-
-  const CreateRoomScreen({
-    super.key,
-    required this.gameFacade,
-  });
+  const CreateRoomScreen({super.key});
 
   @override
   State<CreateRoomScreen> createState() => _CreateRoomScreenState();
@@ -23,6 +20,8 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
+
   Future<void> _createRoom() async {
     setState(() {
       _isLoading = true;
@@ -31,12 +30,12 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
 
     try {
       // Créer la session et rejoindre l'équipe rouge
-      final gameSession = await widget.gameFacade.createGameSession();
-      await widget.gameFacade.joinGameSession(gameSession.id, 'red');
+      final gameSession = await _sessionFacade.createGameSession();
+      await _sessionFacade.joinGameSession(gameSession.id, 'red');
 
       // Rafraîchir pour récupérer les joueurs enrichis
-      await widget.gameFacade.refreshGameSession(gameSession.id);
-      final updatedSession = widget.gameFacade.currentGameSession;
+      await _sessionFacade.refreshGameSession(gameSession.id);
+      final updatedSession = _sessionFacade.currentGameSession;
 
       if (updatedSession == null) {
         throw Exception('Impossible de récupérer la session');
@@ -66,7 +65,6 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => LobbyScreen(
-            gameFacade: widget.gameFacade,
             gameSession: _createdGameSession!,
           ),
           transitionDuration: const Duration(milliseconds: 150),

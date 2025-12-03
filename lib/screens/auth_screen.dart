@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/auth_facade_interface.dart';
 import 'join_room_screen.dart';
 
 /// Écran d'authentification (connexion/inscription)
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 class AuthScreen extends StatefulWidget {
-  final GameFacade gameFacade;
   final String? pendingRoomId;
   final VoidCallback? onAuthSuccess;
 
   const AuthScreen({
     super.key,
-    required this.gameFacade,
     this.pendingRoomId,
     this.onAuthSuccess,
   });
@@ -26,6 +26,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  IAuthFacade get _authFacade => Locator.get<IAuthFacade>();
 
   @override
   void dispose() {
@@ -43,7 +45,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       // Connexion avec juste le nom d'utilisateur
-      await widget.gameFacade.loginWithUsername(_nameController.text);
+      await _authFacade.loginWithUsername(_nameController.text);
 
       if (mounted) {
         // Notifier le parent que l'auth a réussi
@@ -56,7 +58,6 @@ class _AuthScreenState extends State<AuthScreen> {
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) => JoinRoomScreen(
-                gameFacade: widget.gameFacade,
                 initialRoomId: widget.pendingRoomId!,
               ),
               transitionDuration: const Duration(milliseconds: 150),
