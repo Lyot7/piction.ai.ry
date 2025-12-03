@@ -1,6 +1,6 @@
 import 'dart:async';
+import '../interfaces/challenge_api_interface.dart';
 import '../models/game_session.dart';
-import 'challenge_manager.dart';
 import '../utils/logger.dart';
 
 /// Manager pour la gestion des transitions d'état du jeu
@@ -18,8 +18,9 @@ import '../utils/logger.dart';
 /// - guessing: Guessers devinent (phase unique, pas de répétition)
 ///
 /// **Note:** Les rôles sont fixes pour toute la partie, pas d'inversion.
+/// Migré vers IChallengeApi (SOLID DIP) - n'utilise plus ChallengeManager legacy
 class GameStateManager {
-  final ChallengeManager _challengeManager;
+  final IChallengeApi _challengeApi;
 
   // État actuel (lobby, challenge, playing, finished)
   String _currentStatus = 'lobby';
@@ -37,7 +38,7 @@ class GameStateManager {
   final StreamController<String?> _phaseController = StreamController<String?>.broadcast();
   Stream<String?> get phaseStream => _phaseController.stream;
 
-  GameStateManager(this._challengeManager);
+  GameStateManager(this._challengeApi);
 
   /// Met à jour le statut actuel
   void updateStatus(String newStatus) {
@@ -145,7 +146,7 @@ class GameStateManager {
   Future<bool> _checkAllDrawersReady(GameSession session) async {
     try {
       // Récupérer tous les challenges de la session via ChallengeManager
-      final allChallenges = await _challengeManager.listSessionChallenges(session.id);
+      final allChallenges = await _challengeApi.listSessionChallenges(session.id);
 
       if (allChallenges.isEmpty) {
         AppLogger.warning('[GameStateManager] Aucun challenge trouvé');
@@ -185,7 +186,7 @@ class GameStateManager {
     if (_currentStatus != 'playing') return;
 
     try {
-      final allChallenges = await _challengeManager.listSessionChallenges(currentSession.id);
+      final allChallenges = await _challengeApi.listSessionChallenges(currentSession.id);
 
       // Si tous les challenges sont résolus, finir la partie
       if (allChallenges.isNotEmpty && allChallenges.every((c) => c.isCompleted)) {

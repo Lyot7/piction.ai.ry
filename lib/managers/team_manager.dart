@@ -1,23 +1,27 @@
+import '../interfaces/session_api_interface.dart';
 import '../models/game_session.dart';
-import 'session_manager.dart';
-import '../services/api_service.dart';
 import '../utils/logger.dart';
 
 /// Manager pour la gestion des équipes
 /// Principe SOLID: Single Responsibility - Uniquement les équipes
+/// Migré vers ISessionApi (SOLID DIP) - n'utilise plus ApiService legacy
 class TeamManager {
-  final ApiService _apiService;
-  final SessionManager _sessionManager;
+  final ISessionApi _sessionApi;
 
   // Gestion des appels en cours pour éviter les race conditions
   Future<void>? _pendingTeamChange;
 
-  TeamManager(this._apiService, this._sessionManager);
+  // Cache local de la dernière session (pour les stats d'équipe)
+  GameSession? _cachedSession;
+
+  TeamManager(this._sessionApi);
 
   /// Trouve une couleur d'équipe disponible automatiquement
   Future<String> getAvailableTeamColor(String gameSessionId) async {
     try {
-      final session = await _sessionManager.refreshGameSession(gameSessionId);
+      final session = await _sessionApi.getGameSession(gameSessionId);
+      _cachedSession = session;
+
       final redCount = session.players.where((p) => p.color == 'red').length;
       final blueCount = session.players.where((p) => p.color == 'blue').length;
 
@@ -41,6 +45,7 @@ class TeamManager {
   Future<void> changeTeam(String gameSessionId, String newColor) async {
     // Si un changement d'équipe est déjà en cours, on ignore ce nouveau changement
     if (_pendingTeamChange != null) {
+      AppLogger.warning('[TeamManager] Changement d\'équipe déjà en cours, ignoré');
       return;
     }
 
@@ -68,32 +73,42 @@ class TeamManager {
         rethrow;
       }
       // Pour les erreurs transitoires, on ignore silencieusement
+      AppLogger.warning('[TeamManager] Erreur transitoire ignorée: $errorMessage');
     }
   }
 
   /// Version robuste du changement d'équipe (optimisée)
   Future<void> _safeChangeTeam(String gameSessionId, String newColor) async {
     try {
-      // Appels API en séquence rapide (pas de refresh entre)
-      await _apiService.leaveGameSession(gameSessionId);
-      await _apiService.joinGameSession(gameSessionId, newColor);
+      AppLogger.info('[TeamManager] Changement équipe: leave puis join $newColor');
 
-      // Un seul refresh à la fin
-      await _sessionManager.refreshGameSession(gameSessionId);
+      // Appels API en séquence rapide (pas de refresh entre)
+      await _sessionApi.leaveGameSession(gameSessionId);
+      await _sessionApi.joinGameSession(gameSessionId, newColor);
+
+      // Un seul refresh à la fin pour mettre à jour le cache
+      _cachedSession = await _sessionApi.getGameSession(gameSessionId);
+
+      AppLogger.success('[TeamManager] Changement équipe réussi vers $newColor');
     } catch (e) {
       final errorMessage = e.toString().toLowerCase();
 
       if (errorMessage.contains('already in game session') ||
           errorMessage.contains('player already in') ||
           errorMessage.contains('already in room')) {
+        // Déjà dans la session, juste changer d'équipe
         try {
-          await _apiService.joinGameSession(gameSessionId, newColor);
-          await _sessionManager.refreshGameSession(gameSessionId);
+          AppLogger.info('[TeamManager] Déjà dans session, tentative join direct');
+          await _sessionApi.joinGameSession(gameSessionId, newColor);
+          _cachedSession = await _sessionApi.getGameSession(gameSessionId);
         } catch (joinError) {
+          AppLogger.error('[TeamManager] Échec join direct', joinError);
           await safeJoinGameSession(gameSessionId, newColor);
         }
       } else if (errorMessage.contains('not in game session') ||
                  errorMessage.contains('player not in')) {
+        // Pas dans la session, juste joindre
+        AppLogger.info('[TeamManager] Pas dans session, join simple');
         await safeJoinGameSession(gameSessionId, newColor);
       } else {
         rethrow;
@@ -110,11 +125,10 @@ class TeamManager {
       AppLogger.info('[TeamManager] Couleur d\'équipe attribuée: $availableColor');
 
       await safeJoinGameSession(gameSessionId, availableColor);
-      await _sessionManager.refreshGameSession(gameSessionId);
+      _cachedSession = await _sessionApi.getGameSession(gameSessionId);
 
       // Vérifier que le joueur est bien dans la session après le join
-      final session = await _sessionManager.refreshGameSession(gameSessionId);
-      final playerInSession = session.players
+      final playerInSession = _cachedSession?.players
           .where((p) => p.id == currentPlayerId)
           .firstOrNull;
 
@@ -132,39 +146,32 @@ class TeamManager {
   /// Version "safe" de joinGameSession qui gère la désynchronisation client/serveur
   Future<void> safeJoinGameSession(String gameSessionId, String color) async {
     try {
-      await _apiService.joinGameSession(gameSessionId, color);
-      try {
-        await _sessionManager.refreshGameSession(gameSessionId);
-      } catch (refreshError) {
-        final refreshErrorMsg = refreshError.toString().toLowerCase();
-        if (refreshErrorMsg.contains('connection closed') ||
-            refreshErrorMsg.contains('timeout') ||
-            refreshErrorMsg.contains('network')) {
-          return; // Join réussi, le refresh sera retenté par le lobby
-        } else {
-          rethrow;
-        }
-      }
+      await _sessionApi.joinGameSession(gameSessionId, color);
+      _cachedSession = await _sessionApi.getGameSession(gameSessionId);
     } catch (e) {
       final errorMessage = e.toString().toLowerCase();
 
       if (errorMessage.contains('already in game session') ||
           errorMessage.contains('player already in') ||
           errorMessage.contains('already in room')) {
+        // Déjà dans la session, essayer leave puis join
         try {
-          await _apiService.leaveGameSession(gameSessionId);
-          await _apiService.joinGameSession(gameSessionId, color);
-          await _sessionManager.refreshGameSession(gameSessionId);
+          AppLogger.info('[TeamManager] safeJoin: leave puis rejoin');
+          await _sessionApi.leaveGameSession(gameSessionId);
+          await _sessionApi.joinGameSession(gameSessionId, color);
+          _cachedSession = await _sessionApi.getGameSession(gameSessionId);
         } catch (leaveJoinError) {
-          await _sessionManager.refreshGameSession(gameSessionId);
+          _cachedSession = await _sessionApi.getGameSession(gameSessionId);
           rethrow;
         }
       } else if (errorMessage.contains('not in game session') ||
                  errorMessage.contains('player not in')) {
+        // Pas dans la session, refresh puis join
         try {
-          await _sessionManager.refreshGameSession(gameSessionId);
-          await _apiService.joinGameSession(gameSessionId, color);
-          await _sessionManager.refreshGameSession(gameSessionId);
+          AppLogger.info('[TeamManager] safeJoin: refresh puis join');
+          _cachedSession = await _sessionApi.getGameSession(gameSessionId);
+          await _sessionApi.joinGameSession(gameSessionId, color);
+          _cachedSession = await _sessionApi.getGameSession(gameSessionId);
         } catch (notInSessionError) {
           rethrow;
         }

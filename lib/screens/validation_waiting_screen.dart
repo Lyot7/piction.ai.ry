@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/session_facade_interface.dart';
 import '../utils/logger.dart';
 import '../widgets/common/game_waiting_screen.dart';
 import 'results_screen.dart';
 
 /// Écran d'attente après avoir répondu à tous les challenges (phase guessing)
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 ///
 /// Refactorisé pour utiliser GameWaitingScreen (principe DRY)
 class ValidationWaitingScreen extends StatefulWidget {
-  final GameFacade gameFacade;
   final int scoreTeam1;
   final int scoreTeam2;
 
   const ValidationWaitingScreen({
     super.key,
-    required this.gameFacade,
     required this.scoreTeam1,
     required this.scoreTeam2,
   });
@@ -24,13 +24,15 @@ class ValidationWaitingScreen extends StatefulWidget {
 }
 
 class _ValidationWaitingScreenState extends State<ValidationWaitingScreen> {
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
+
   Future<bool> _checkIfFinished() async {
     try {
-      final gameSession = widget.gameFacade.currentGameSession;
+      final gameSession = _sessionFacade.currentGameSession;
       if (gameSession == null) return false;
 
-      await widget.gameFacade.refreshGameSession(gameSession.id);
-      final updatedSession = widget.gameFacade.currentGameSession;
+      await _sessionFacade.refreshGameSession(gameSession.id);
+      final updatedSession = _sessionFacade.currentGameSession;
       if (updatedSession == null) return false;
 
       final status = updatedSession.status;
@@ -47,19 +49,19 @@ class _ValidationWaitingScreenState extends State<ValidationWaitingScreen> {
   Future<void> _navigateToResults() async {
     AppLogger.success('[ValidationWaitingScreen] Transition vers résultats');
 
-    // ✅ SYNC FINAL SCORES: Récupérer les scores finaux depuis le backend
+    // SYNC FINAL SCORES: Récupérer les scores finaux depuis le backend
     int finalRedScore = widget.scoreTeam1;
     int finalBlueScore = widget.scoreTeam2;
 
     try {
-      final gameSession = widget.gameFacade.currentGameSession;
+      final gameSession = _sessionFacade.currentGameSession;
       if (gameSession != null) {
-        await widget.gameFacade.refreshGameSession(gameSession.id);
-        final finalSession = widget.gameFacade.currentGameSession;
+        await _sessionFacade.refreshGameSession(gameSession.id);
+        final finalSession = _sessionFacade.currentGameSession;
         if (finalSession != null) {
           finalRedScore = finalSession.teamScores['red'] ?? widget.scoreTeam1;
           finalBlueScore = finalSession.teamScores['blue'] ?? widget.scoreTeam2;
-          AppLogger.info('[ValidationWaitingScreen] 🏆 Scores finaux backend - Red: $finalRedScore, Blue: $finalBlueScore');
+          AppLogger.info('[ValidationWaitingScreen] Scores finaux backend - Red: $finalRedScore, Blue: $finalBlueScore');
         }
       }
     } catch (e) {
@@ -71,9 +73,8 @@ class _ValidationWaitingScreenState extends State<ValidationWaitingScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => ResultsScreen(
-            gameFacade: widget.gameFacade,
-            scoreTeam1: finalRedScore,
-            scoreTeam2: finalBlueScore,
+            initialScoreTeam1: finalRedScore,
+            initialScoreTeam2: finalBlueScore,
           ),
         ),
       );

@@ -1,6 +1,17 @@
 import 'player.dart';
 import '../utils/logger.dart';
 
+/// Helper pour parser un score depuis int/string/dynamic
+int _parseScore(dynamic value) {
+  if (value == null) return 100;
+  if (value is int) return value;
+  if (value is double) return value.toInt();
+  if (value is String) {
+    return int.tryParse(value) ?? 100;
+  }
+  return 100;
+}
+
 /// Modèle pour une session de jeu
 class GameSession {
   /// Alias pour la date de début, utilisé par la logique de transition
@@ -33,15 +44,33 @@ class GameSession {
     AppLogger.log('[GameSession] blue_team type: ${json['blue_team']?.runtimeType}');
     AppLogger.log('[GameSession] players type: ${json['players']?.runtimeType}');
 
-    // Parser les scores d'équipe
+    // Parser les scores d'équipe (plusieurs formats possibles du backend)
     Map<String, int> scores = {"red": 100, "blue": 100};
-    if (json['teamScores'] != null && json['teamScores'] is Map) {
-      final Map teamScoresJson = json['teamScores'];
+
+    // Format 1: teamScores ou team_scores (objet)
+    final teamScoresJson = json['teamScores'] ?? json['team_scores'] ?? json['scores'];
+    if (teamScoresJson != null && teamScoresJson is Map) {
       scores = {
-        'red': teamScoresJson['red'] ?? 100,
-        'blue': teamScoresJson['blue'] ?? 100,
+        'red': _parseScore(teamScoresJson['red']),
+        'blue': _parseScore(teamScoresJson['blue']),
       };
     }
+    // Format 2: red_score / blue_score (champs séparés)
+    else if (json['red_score'] != null || json['blue_score'] != null) {
+      scores = {
+        'red': _parseScore(json['red_score']),
+        'blue': _parseScore(json['blue_score']),
+      };
+    }
+    // Format 3: red_team_score / blue_team_score
+    else if (json['red_team_score'] != null || json['blue_team_score'] != null) {
+      scores = {
+        'red': _parseScore(json['red_team_score']),
+        'blue': _parseScore(json['blue_team_score']),
+      };
+    }
+
+    AppLogger.info('[GameSession] Parsed teamScores: $scores (from JSON keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('score')).toList()})');
 
     // Parser les joueurs depuis le format standard OU depuis red_team/blue_team
     List<Player> players = [];

@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import '../themes/app_theme.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/auth_facade_interface.dart';
 import 'create_room_screen.dart';
 import 'join_room_screen.dart';
 
 /// Écran d'accueil principal de Piction.ia.ry
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 class HomeScreen extends StatelessWidget {
-  final GameFacade gameFacade;
-
-  const HomeScreen({
-    super.key,
-    required this.gameFacade,
-  });
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +19,7 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await gameFacade.logout();
+              await Locator.get<IAuthFacade>().logout();
               if (context.mounted) {
                 Navigator.of(context).pushNamedAndRemoveUntil(
                   '/auth',
@@ -211,9 +208,8 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => CreateRoomScreen(
-          gameFacade: gameFacade,
-        ),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const CreateRoomScreen(),
         transitionDuration: const Duration(milliseconds: 200),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
@@ -226,9 +222,8 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => JoinRoomScreen(
-          gameFacade: gameFacade,
-        ),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const JoinRoomScreen(),
         transitionDuration: const Duration(milliseconds: 200),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);

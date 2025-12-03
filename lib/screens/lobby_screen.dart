@@ -1,23 +1,22 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../themes/app_theme.dart';
 import '../models/game_session.dart';
 import '../models/player.dart';
-import '../services/game_facade.dart';
 import '../services/deep_link_service.dart';
-import '../utils/logger.dart';
+import '../viewmodels/lobby_view_model.dart';
+import '../viewmodels/viewmodel_factory.dart';
 import 'challenge_creation_screen.dart';
 
-/// Écran de lobby pour organiser les équipes et commencer la partie
+/// Écran de lobby pour organiser les équipes (SOLID)
+/// Utilise LobbyViewModel pour séparer la logique métier de l'UI (SRP)
+/// Migré vers Locator (DIP) - n'utilise plus GameFacade prop drilling
 class LobbyScreen extends StatefulWidget {
-  final GameFacade gameFacade;
   final GameSession gameSession;
 
   const LobbyScreen({
     super.key,
-    required this.gameFacade,
     required this.gameSession,
   });
 
@@ -26,175 +25,200 @@ class LobbyScreen extends StatefulWidget {
 }
 
 class _LobbyScreenState extends State<LobbyScreen> {
-  late GameSession _gameSession;
-  bool _isLoading = false;
-  String? _errorMessage;
-  Timer? _refreshTimer;
-  bool _isRefreshing = false;
-  bool _isChangingTeam = false;
-  DateTime? _lastTeamChangeAttempt;
-
-  // Tracking des joueurs en cours de changement d'équipe
-  // Map: playerId -> targetTeamColor
-  final Map<String, String> _playersTransitioning = {};
-
-  // ⚡ OPTIMISATION: Cache du lien de join pour éviter les recalculs
+  late final LobbyViewModel _viewModel;
   late final String _cachedJoinLink;
+  DateTime? _lastTeamChangeAttempt;
 
   @override
   void initState() {
     super.initState();
-    _gameSession = widget.gameSession;
-
-    // ⚡ OPTIMISATION: Calculer le lien de join UNE SEULE FOIS
+    _viewModel = ViewModelFactory.createLobbyViewModel();
     _cachedJoinLink = _generateJoinLink();
-
-    _listenToGameSessionUpdates();
-    _startAutoRefresh();
-    // Faire un refresh immédiat pour afficher l'état actuel
-    Future.microtask(() => _refreshSessionOptimized());
+    _viewModel.startPolling();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _viewModel.dispose();
     super.dispose();
   }
 
-  void _listenToGameSessionUpdates() {
-    widget.gameFacade.gameSessionStream.listen((gameSession) {
-      if (gameSession != null && mounted) {
-        setState(() {
-          _gameSession = gameSession;
-        });
-      }
-    });
+  String _generateJoinLink() {
+    final deepLinkService = DeepLinkService();
+    return deepLinkService.generateRoomLink(widget.gameSession.id);
   }
 
-  /// ✅ SOLID: Utilise session.isPlayerHost() comme source unique de vérité
-  bool get _isHost {
-    final currentPlayer = widget.gameFacade.currentPlayer;
-    if (currentPlayer == null) return false;
-    return _gameSession.isPlayerHost(currentPlayer.id);
-  }
+  void _shareRoom() {
+    final shareText =
+        'Rejoignez ma partie Piction.ia.ry ! 🎨\n\n'
+        'Code de room: ${widget.gameSession.id}\n'
+        'Lien direct: $_cachedJoinLink\n\n'
+        'Téléchargez l\'app et rejoignez la partie !';
 
-  bool _canStartGame() {
-    // Vérifier qu'il y a exactement 2 joueurs par équipe
-    final redPlayers = _gameSession.players
-        .where((p) => p.color == 'red')
-        .length;
-    final bluePlayers = _gameSession.players
-        .where((p) => p.color == 'blue')
-        .length;
-    return redPlayers == 2 && bluePlayers == 2 && _isHost;
+    Share.share(
+      shareText,
+      subject: 'Invitation Piction.ia.ry - Partie ${widget.gameSession.id}',
+    );
   }
-
 
   Future<void> _startGame() async {
-    if (!_canStartGame()) return;
+    if (!_viewModel.canStartGame()) return;
 
-    // Vérifier si la session n'est pas déjà démarrée
-    if (_gameSession.status != 'lobby') {
-      AppLogger.warning('[LobbyScreen] La session est déjà en cours (status: ${_gameSession.status})');
+    final success = await _viewModel.startGame();
+    if (success && mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ChallengeCreationScreen(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleTeamClick(String teamColor, bool isCurrentPlayerInThisTeam) async {
+    final now = DateTime.now();
+    if (_lastTeamChangeAttempt != null &&
+        now.difference(_lastTeamChangeAttempt!).inMilliseconds < 300) {
       return;
     }
+    _lastTeamChangeAttempt = now;
 
-    // Empêcher les double clics
-    if (_isLoading) return;
+    await _viewModel.handleTeamClick(teamColor, isCurrentPlayerInThisTeam);
+  }
 
-    // Log de l'état avant démarrage
-    AppLogger.info('[LobbyScreen] Démarrage de la partie...');
-    AppLogger.info('[LobbyScreen] Session ID: ${_gameSession.id}');
-    AppLogger.info('[LobbyScreen] Nombre de joueurs: ${_gameSession.players.length}');
-    AppLogger.info('[LobbyScreen] Équipe rouge: ${_gameSession.players.where((p) => p.color == 'red').length} joueurs');
-    AppLogger.info('[LobbyScreen] Équipe bleue: ${_gameSession.players.where((p) => p.color == 'blue').length} joueurs');
-    AppLogger.info('[LobbyScreen] Joueurs: ${_gameSession.players.map((p) => "${p.name} (${p.color})").join(", ")}');
+  void _showQRCodeOverlay() {
+    final overlay = Overlay.of(context);
+    late OverlayEntry overlayEntry;
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      await widget.gameFacade.startGameSession();
-
-      // Navigation vers l'écran de création de challenges
-      if (mounted) {
-        AppLogger.success('[LobbyScreen] Navigation vers ChallengeCreationScreen');
-        await Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChallengeCreationScreen(
-              gameFacade: widget.gameFacade,
+    overlayEntry = OverlayEntry(
+      builder: (context) => GestureDetector(
+        onTap: () => overlayEntry.remove(),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.8),
+          child: Center(
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(
+                margin: const EdgeInsets.all(40),
+                padding: const EdgeInsets.all(30),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'QR Code de la partie',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: QrImageView(
+                        data: _cachedJoinLink,
+                        version: QrVersions.auto,
+                        size: 250.0,
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Code: ${widget.gameSession.id}',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Scannez ce QR code pour rejoindre la partie',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Cliquez n\'importe où pour fermer',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[500],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        );
-      }
-    } catch (e) {
-      AppLogger.error('[LobbyScreen] ERREUR démarrage', e);
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+        ),
+      ),
+    );
+
+    overlay.insert(overlayEntry);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Room ${_gameSession.id}'),
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
-        actions: [
-          if (_isHost)
-            TextButton.icon(
-              onPressed: _canStartGame() && !_isLoading ? _startGame : null,
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.play_arrow, color: Colors.white),
-              label: Text(
-                _isLoading ? 'Démarrage...' : 'Commencer',
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              // Message d'erreur
-              if (_errorMessage != null) ...[
-                _buildErrorMessage(),
-                const SizedBox(height: 16),
-              ],
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, child) {
+        final gameSession = _viewModel.currentGameSession ?? widget.gameSession;
 
-              // Code de partie et QR Code
-              _buildGameCodeAndQRCard(),
-              const SizedBox(height: 16),
-
-              // Équipes en vertical
-              _buildTeamsSection(),
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Room ${gameSession.id}'),
+            backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+            actions: [
+              if (_viewModel.isHost)
+                TextButton.icon(
+                  onPressed: _viewModel.canStartGame() && !_viewModel.isLoading
+                      ? _startGame
+                      : null,
+                  icon: _viewModel.isLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.play_arrow, color: Colors.white),
+                  label: Text(
+                    _viewModel.isLoading ? 'Démarrage...' : 'Commencer',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
             ],
           ),
-        ),
-      ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  if (_viewModel.errorMessage != null) ...[
+                    _buildErrorMessage(),
+                    const SizedBox(height: 16),
+                  ],
+                  _buildGameCodeAndQRCard(gameSession),
+                  const SizedBox(height: 16),
+                  _buildTeamsSection(gameSession),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -212,7 +236,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _errorMessage!,
+              _viewModel.errorMessage!,
               style: TextStyle(color: AppTheme.errorColor, fontSize: 14),
             ),
           ),
@@ -221,7 +245,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildGameCodeAndQRCard() {
+  Widget _buildGameCodeAndQRCard(GameSession gameSession) {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -229,11 +253,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Titre et QR Code sur la même ligne
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Section gauche : Titre + Code de la room
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,13 +269,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        _gameSession.id,
-                        style: Theme.of(context).textTheme.displaySmall
-                            ?.copyWith(
-                              color: AppTheme.primaryColor,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 4,
-                            ),
+                        gameSession.id,
+                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 4,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -265,10 +286,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 20),
-
-                // QR Code cliquable avec taille fixe
                 GestureDetector(
                   onTap: _showQRCodeOverlay,
                   child: Container(
@@ -288,26 +306,15 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       ],
                     ),
                     child: QrImageView(
-                      data: _cachedJoinLink, // ⚡ OPTIMISATION: Utiliser le cache
+                      data: _cachedJoinLink,
                       version: QrVersions.auto,
                       backgroundColor: Colors.white,
-                      eyeStyle: const QrEyeStyle(
-                        eyeShape: QrEyeShape.square,
-                        color: Colors.black,
-                      ),
-                      dataModuleStyle: const QrDataModuleStyle(
-                        dataModuleShape: QrDataModuleShape.square,
-                        color: Colors.black,
-                      ),
                     ),
                   ),
                 ),
               ],
             ),
-
             const SizedBox(height: 16),
-
-            // Bouton de partage
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -329,49 +336,20 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildTeamsSection() {
+  Widget _buildTeamsSection(GameSession gameSession) {
     return Column(
       children: [
-        // Équipe Rouge (haut)
-        _buildTeamCard('Équipe Rouge', 'red', AppTheme.teamRedColor),
+        _buildTeamCard('Équipe Rouge', 'red', AppTheme.teamRedColor, gameSession),
         const SizedBox(height: 12),
-        // Équipe Bleue (bas)
-        _buildTeamCard('Équipe Bleue', 'blue', AppTheme.teamBlueColor),
+        _buildTeamCard('Équipe Bleue', 'blue', AppTheme.teamBlueColor, gameSession),
       ],
     );
   }
 
-  Widget _buildTeamCard(String teamName, String teamColor, Color color) {
-    // Joueurs actuellement dans l'équipe (en excluant ceux en transition vers une autre équipe)
-    final teamPlayers = _gameSession.players
-        .where((p) => p.color == teamColor && !_playersTransitioning.containsKey(p.id))
-        .toList();
-
-    // Joueurs en transition VERS cette équipe
-    final playersTransitioningToThisTeam = _playersTransitioning.entries
-        .where((entry) => entry.value == teamColor)
-        .map((entry) {
-          // Trouver le joueur dans la session
-          return _gameSession.players.firstWhere(
-            (p) => p.id == entry.key,
-            orElse: () => Player(
-              id: entry.key,
-              name: 'Chargement...',
-              color: teamColor,
-              role: null,
-              isHost: false,
-            ),
-          );
-        })
-        .toList();
-
-    final currentPlayer = widget.gameFacade.currentPlayer;
-    final isCurrentPlayerInThisTeam =
-        currentPlayer != null &&
-        teamPlayers.any((p) => p.id == currentPlayer.id);
-
-    // Calculer le compte total (joueurs actuels + en transition)
-    final totalCount = teamPlayers.length + playersTransitioningToThisTeam.length;
+  Widget _buildTeamCard(String teamName, String teamColor, Color color, GameSession gameSession) {
+    final teamPlayers = _viewModel.getTeamPlayers(teamColor);
+    final isCurrentPlayerInThisTeam = _viewModel.isPlayerInTeam(teamColor);
+    final totalCount = teamPlayers.length;
 
     return Card(
       elevation: 4,
@@ -381,7 +359,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: currentPlayer != null ? () => _handleTeamClick(teamColor, isCurrentPlayerInThisTeam) : null,
+        onTap: () => _handleTeamClick(teamColor, isCurrentPlayerInThisTeam),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -399,7 +377,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // En-tête de l'équipe avec compteur
               Row(
                 children: [
                   Container(
@@ -427,10 +404,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -448,28 +422,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-
-              // Liste des slots (2 max)
               ...List.generate(2, (index) {
-                // D'abord afficher les joueurs réels
                 if (index < teamPlayers.length) {
-                  return _buildPlayerSlot(teamPlayers[index], color, isLoading: false);
+                  return _buildPlayerSlot(teamPlayers[index], color, gameSession);
                 }
-                // Ensuite les joueurs en transition
-                else if (index < totalCount) {
-                  final transitionIndex = index - teamPlayers.length;
-                  return _buildPlayerSlot(
-                    playersTransitioningToThisTeam[transitionIndex],
-                    color,
-                    isLoading: true,
-                  );
-                }
-                // Enfin les slots vides
-                else {
-                  return _buildPlayerSlot(null, color, isLoading: false);
-                }
+                return _buildPlayerSlot(null, color, gameSession);
               }),
-
             ],
           ),
         ),
@@ -477,82 +435,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  Widget _buildPlayerSlot(Player? player, Color teamColor, {required bool isLoading}) {
-    final isCurrentPlayer =
-        player != null && widget.gameFacade.currentPlayer?.id == player.id;
+  Widget _buildPlayerSlot(Player? player, Color teamColor, GameSession gameSession) {
+    final currentPlayer = _viewModel.currentPlayer;
+    final isCurrentPlayer = player != null && currentPlayer?.id == player.id;
 
-    // État de chargement : card grisée avec loader
-    if (isLoading && player != null) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.grey[400]!,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            // Avatar avec loader
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.grey[400],
-                shape: BoxShape.circle,
-              ),
-              child: const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    player.name,
-                    style: TextStyle(
-                      fontWeight: FontWeight.normal,
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'Changement en cours...',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[500],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Icône de chargement
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[500]!),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // État normal
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -585,388 +471,24 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  player?.name ?? 'Cliquez pour rejoindre',
-                  style: TextStyle(
-                    fontWeight: isCurrentPlayer
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: player != null
-                        ? (isCurrentPlayer ? teamColor : Colors.black87)
-                        : Colors.grey[500],
-                    fontSize: 14,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                // Afficher le rôle si défini
-                // Rôle retiré de l'UI (attribution silencieuse pour backend uniquement)
-              ],
+            child: Text(
+              player?.name ?? 'Cliquez pour rejoindre',
+              style: TextStyle(
+                fontWeight: isCurrentPlayer ? FontWeight.bold : FontWeight.normal,
+                color: player != null
+                    ? (isCurrentPlayer ? teamColor : Colors.black87)
+                    : Colors.grey[500],
+                fontSize: 14,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           if (isCurrentPlayer)
             Icon(Icons.check_circle, color: teamColor, size: 16),
-          // ✅ SOLID: Utilise session.isPlayerHost() comme source unique de vérité
-          if (player != null && _gameSession.isPlayerHost(player.id))
+          if (player != null && gameSession.isPlayerHost(player.id))
             const Icon(Icons.star, color: Colors.amber, size: 16),
         ],
       ),
     );
-  }
-
-  /// Génère le lien de partage pour rejoindre la room
-  String _generateJoinLink() {
-    final deepLinkService = DeepLinkService();
-    return deepLinkService.generateRoomLink(_gameSession.id);
-  }
-
-  /// Partage la room avec la modal native
-  void _shareRoom() {
-    // ⚡ OPTIMISATION: Utiliser le cache au lieu de régénérer
-    final shareText =
-        'Rejoignez ma partie Piction.ia.ry ! 🎨\n\n'
-        'Code de room: ${_gameSession.id}\n'
-        'Lien direct: $_cachedJoinLink\n\n'
-        'Téléchargez l\'app et rejoignez la partie !';
-
-    Share.share(
-      shareText,
-      subject: 'Invitation Piction.ia.ry - Partie ${_gameSession.id}',
-    );
-  }
-
-  /// Affiche le QR code en grand dans un overlay qui se ferme au clic
-  void _showQRCodeOverlay() {
-    // ⚡ OPTIMISATION: Utiliser le cache au lieu de régénérer
-    final overlay = Overlay.of(context);
-    late OverlayEntry overlayEntry;
-
-    overlayEntry = OverlayEntry(
-      builder: (context) => GestureDetector(
-        onTap: () => overlayEntry.remove(),
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.8),
-          child: Center(
-            child: GestureDetector(
-              onTap: () {}, // Empêcher la fermeture quand on clique sur le QR
-              child: Container(
-                margin: const EdgeInsets.all(40),
-                padding: const EdgeInsets.all(30),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'QR Code de la partie',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: AppTheme.primaryColor,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: QrImageView(
-                        data: _cachedJoinLink, // ⚡ OPTIMISATION: Utiliser le cache
-                        version: QrVersions.auto,
-                        size: 250.0,
-                        backgroundColor: Colors.white,
-                        eyeStyle: const QrEyeStyle(
-                          eyeShape: QrEyeShape.square,
-                          color: Colors.black,
-                        ),
-                        dataModuleStyle: const QrDataModuleStyle(
-                          dataModuleShape: QrDataModuleShape.square,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Code: ${_gameSession.id}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Scannez ce QR code pour rejoindre la partie',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Cliquez n\'importe où pour fermer',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[500],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-  }
-
-  Future<void> _handleTeamClick(String teamColor, bool isCurrentPlayerInThisTeam) async {
-    final currentPlayer = widget.gameFacade.currentPlayer;
-    if (currentPlayer == null) return;
-
-    // Debounce: ignorer les clics trop rapides (< 300ms)
-    final now = DateTime.now();
-    if (_lastTeamChangeAttempt != null &&
-        now.difference(_lastTeamChangeAttempt!).inMilliseconds < 300) {
-      return;
-    }
-    _lastTeamChangeAttempt = now;
-
-    // Si un changement est déjà en cours, ignorer
-    if (_isChangingTeam) return;
-
-    try {
-      setState(() => _isChangingTeam = true);
-
-      if (isCurrentPlayerInThisTeam) {
-        final otherTeamColor = teamColor == 'red' ? 'blue' : 'red';
-        final currentGameSession = widget.gameFacade.currentGameSession;
-        if (currentGameSession != null) {
-          final otherTeamCount = currentGameSession.players
-              .where((p) => p.color == otherTeamColor)
-              .length;
-
-          if (otherTeamCount >= 2) {
-            _showErrorMessage('L\'autre équipe est déjà complète');
-            return;
-          }
-        }
-
-        // Marquer le joueur comme en transition
-        setState(() {
-          _playersTransitioning[currentPlayer.id] = otherTeamColor;
-        });
-
-        await _changeTeam(otherTeamColor);
-      } else {
-        final currentGameSession = widget.gameFacade.currentGameSession;
-        if (currentGameSession != null) {
-          final targetTeamCount = currentGameSession.players
-              .where((p) => p.color == teamColor)
-              .length;
-
-          if (targetTeamCount >= 2) {
-            _showErrorMessage('Cette équipe est déjà complète');
-            return;
-          }
-        }
-
-        // Marquer le joueur comme en transition
-        setState(() {
-          _playersTransitioning[currentPlayer.id] = teamColor;
-        });
-
-        await _joinTeam(teamColor);
-      }
-    } catch (e) {
-      // En cas d'erreur, retirer de la transition
-      if (mounted) {
-        setState(() {
-          _playersTransitioning.remove(currentPlayer.id);
-        });
-      }
-      _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) {
-        setState(() => _isChangingTeam = false);
-      }
-    }
-  }
-
-  Future<void> _joinTeam(String teamColor) async {
-    try {
-      final currentPlayer = widget.gameFacade.currentPlayer;
-      if (currentPlayer == null) return;
-
-      final currentGameSession = widget.gameFacade.currentGameSession;
-      if (currentGameSession == null) {
-        await widget.gameFacade.joinGameSession(_gameSession.id, teamColor);
-        return;
-      }
-
-      final targetTeamCount = currentGameSession.players
-          .where((p) => p.color == teamColor)
-          .length;
-
-      if (targetTeamCount >= 2) {
-        _showErrorMessage('L\'équipe est déjà complète');
-        return;
-      }
-
-      final currentPlayerInSession = currentGameSession.players
-          .where((p) => p.id == currentPlayer.id)
-          .firstOrNull;
-
-      if (currentPlayerInSession != null) {
-        if (currentPlayerInSession.color != teamColor) {
-          await widget.gameFacade.changeTeam(_gameSession.id, teamColor);
-        }
-      } else {
-        await widget.gameFacade.joinGameSession(_gameSession.id, teamColor);
-      }
-
-      // Le polling auto rafraîchit l'UI
-    } catch (e) {
-      // Ne pas afficher les erreurs transitoires ou de race condition
-      final errorMsg = e.toString().toLowerCase();
-      if (!errorMsg.contains('already in') &&
-          !errorMsg.contains('connection') &&
-          !errorMsg.contains('timeout')) {
-        _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
-      }
-    }
-  }
-
-
-  Future<void> _changeTeam(String newTeamColor) async {
-    try {
-      // Changement d'équipe rapide, le service gère la gestion des appels
-      await widget.gameFacade.changeTeam(_gameSession.id, newTeamColor);
-    } catch (e) {
-      // Ne pas afficher les erreurs transitoires
-      final errorMsg = e.toString().toLowerCase();
-      if (!errorMsg.contains('already in') &&
-          !errorMsg.contains('connection') &&
-          !errorMsg.contains('timeout')) {
-        _showErrorMessage(e.toString().replaceFirst('Exception: ', ''));
-      }
-    }
-  }
-
-  void _startAutoRefresh() {
-    // ⚡ OPTIMISATION: Passer de 500ms → 1000ms pour réduire la charge
-    // Avec 4 clients: 8 req/s → 4 req/s (réduction de 50%)
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
-      if (mounted) {
-        _refreshSessionOptimized();
-      }
-    });
-  }
-
-  Future<void> _refreshSessionOptimized() async {
-    if (_isRefreshing) return;
-
-    _isRefreshing = true;
-    try {
-      await widget.gameFacade.refreshGameSession(_gameSession.id);
-
-      final updatedSession = widget.gameFacade.currentGameSession;
-      if (updatedSession != null && mounted) {
-        // Détecter les transitions complètes
-        _detectCompletedTransitions(updatedSession);
-
-        // Ne faire setState que si la session a vraiment changé
-        // Comparer les joueurs pour éviter les rebuilds inutiles
-        final hasChanged = _hasSessionChanged(_gameSession, updatedSession);
-
-        if (hasChanged) {
-          setState(() {
-            _gameSession = updatedSession;
-          });
-        } else {
-          // Mise à jour silencieuse sans rebuild
-          _gameSession = updatedSession;
-        }
-      }
-    } catch (e) {
-      // Erreur silencieuse, le prochain refresh réessaiera
-    } finally {
-      _isRefreshing = false;
-    }
-  }
-
-  /// Détecte les transitions complètes et retire les joueurs de _playersTransitioning
-  void _detectCompletedTransitions(GameSession updatedSession) {
-    final completedTransitions = <String>[];
-
-    for (final entry in _playersTransitioning.entries) {
-      final playerId = entry.key;
-      final targetColor = entry.value;
-
-      // Chercher le joueur dans la nouvelle session
-      final player = updatedSession.players
-          .where((p) => p.id == playerId)
-          .firstOrNull;
-
-      // Si le joueur est maintenant dans l'équipe cible, la transition est complète
-      if (player != null && player.color == targetColor) {
-        completedTransitions.add(playerId);
-      }
-    }
-
-    // Retirer les transitions complètes
-    if (completedTransitions.isNotEmpty) {
-      setState(() {
-        for (final playerId in completedTransitions) {
-          _playersTransitioning.remove(playerId);
-        }
-      });
-    }
-  }
-
-  /// Vérifie si la session a vraiment changé (pour éviter les rebuilds inutiles)
-  bool _hasSessionChanged(GameSession oldSession, GameSession newSession) {
-    // Comparer le nombre de joueurs
-    if (oldSession.players.length != newSession.players.length) return true;
-
-    // Comparer les IDs, couleurs et rôles des joueurs
-    for (var i = 0; i < oldSession.players.length; i++) {
-      final oldPlayer = oldSession.players[i];
-      final newPlayer = newSession.players.firstWhere(
-        (p) => p.id == oldPlayer.id,
-        orElse: () => oldPlayer,
-      );
-
-      if (oldPlayer.id != newPlayer.id ||
-          oldPlayer.color != newPlayer.color ||
-          oldPlayer.role != newPlayer.role ||
-          oldPlayer.name != newPlayer.name) {
-        return true;
-      }
-    }
-
-    // Comparer le statut
-    if (oldSession.status != newSession.status) return true;
-
-    return false;
-  }
-
-  void _showErrorMessage(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppTheme.errorColor,
-        ),
-      );
-    }
   }
 }

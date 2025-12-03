@@ -1,5 +1,18 @@
 import 'dart:convert';
 
+/// Helper pour parser un bool depuis int/string/bool
+bool? _parseBool(dynamic value) {
+  if (value == null) return null;
+  if (value is bool) return value;
+  if (value is int) return value == 1;
+  if (value is String) {
+    final lower = value.toLowerCase();
+    if (lower == 'true' || lower == '1') return true;
+    if (lower == 'false' || lower == '0') return false;
+  }
+  return null;
+}
+
 /// Modèle pour un challenge
 /// Format: "Un/Une [INPUT1] Sur/Dans Un/Une [INPUT2]"
 class Challenge {
@@ -96,7 +109,7 @@ class Challenge {
       prompt: json['prompt'],
       imageUrl: imageUrl,
       answer: json['answer'],
-      isResolved: json['is_resolved'] ?? json['isResolved'],
+      isResolved: _parseBool(json['is_resolved'] ?? json['isResolved']),
       drawerId: (json['drawerId'] ?? json['drawer_id'] ?? '').toString(),
       guesserId: (json['guesserId'] ?? json['guesser_id'] ?? '').toString(),
       currentPhase: json['currentPhase'] ?? json['current_phase'],

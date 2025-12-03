@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/game_facade.dart';
+import '../di/locator.dart';
+import '../interfaces/facades/challenge_facade_interface.dart';
+import '../interfaces/facades/session_facade_interface.dart';
 import '../themes/app_theme.dart';
 import '../utils/logger.dart';
 import '../widgets/common/game_waiting_screen.dart';
@@ -9,12 +11,11 @@ import '../models/player.dart';
 import 'game_screen.dart';
 
 /// Écran d'attente après l'envoi des images (phase drawing)
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade prop drilling
 ///
 /// Affiche le statut de tous les joueurs et leur progression
 class DrawingWaitingScreen extends StatefulWidget {
-  final GameFacade gameFacade;
-
-  const DrawingWaitingScreen({super.key, required this.gameFacade});
+  const DrawingWaitingScreen({super.key});
 
   @override
   State<DrawingWaitingScreen> createState() => _DrawingWaitingScreenState();
@@ -25,6 +26,9 @@ class _DrawingWaitingScreenState extends State<DrawingWaitingScreen> {
   int _totalImages = 0;
   int _totalChallenges = 0;
   Timer? _refreshTimer;
+
+  ISessionFacade get _sessionFacade => Locator.get<ISessionFacade>();
+  IChallengeFacade get _challengeFacade => Locator.get<IChallengeFacade>();
 
   @override
   void initState() {
@@ -49,16 +53,16 @@ class _DrawingWaitingScreenState extends State<DrawingWaitingScreen> {
 
   Future<void> _loadPlayersStatus() async {
     try {
-      final gameSession = widget.gameFacade.currentGameSession;
+      final gameSession = _sessionFacade.currentGameSession;
       if (gameSession == null) return;
 
       // Refresh session pour avoir les données à jour
-      await widget.gameFacade.refreshGameSession(gameSession.id);
-      final updatedSession = widget.gameFacade.currentGameSession;
+      await _sessionFacade.refreshGameSession(gameSession.id);
+      final updatedSession = _sessionFacade.currentGameSession;
       if (updatedSession == null) return;
 
       // Récupérer tous les challenges
-      final allChallenges = await widget.gameFacade.challenge.listSessionChallenges(updatedSession.id);
+      final allChallenges = await _challengeFacade.listSessionChallenges(updatedSession.id);
 
       // Compter les images globalement
       final imagesCount = allChallenges.where((c) => c.imageUrl != null && c.imageUrl!.isNotEmpty).length;
@@ -77,11 +81,11 @@ class _DrawingWaitingScreenState extends State<DrawingWaitingScreen> {
 
   Future<bool> _checkIfGuessingPhase() async {
     try {
-      final gameSession = widget.gameFacade.currentGameSession;
+      final gameSession = _sessionFacade.currentGameSession;
       if (gameSession == null) return false;
 
-      await widget.gameFacade.refreshGameSession(gameSession.id);
-      final updatedSession = widget.gameFacade.currentGameSession;
+      await _sessionFacade.refreshGameSession(gameSession.id);
+      final updatedSession = _sessionFacade.currentGameSession;
       if (updatedSession == null) return false;
 
       final gamePhase = updatedSession.gamePhase;
@@ -89,7 +93,7 @@ class _DrawingWaitingScreenState extends State<DrawingWaitingScreen> {
       AppLogger.info('[DrawingWaitingScreen] Status: $status, Phase: $gamePhase, Images: $_totalImages/$_totalChallenges');
 
       // Transition si gamePhase = 'guessing' OU status = 'guessing'
-      // ✅ FIX: Le backend retourne status='guessing' mais gamePhase peut être null
+      // FIX: Le backend retourne status='guessing' mais gamePhase peut être null
       if (gamePhase == 'guessing' || status == 'guessing') {
         AppLogger.success('[DrawingWaitingScreen] Phase guessing détectée (gamePhase=$gamePhase, status=$status)');
         return true;
@@ -147,7 +151,7 @@ class _DrawingWaitingScreenState extends State<DrawingWaitingScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => GameScreen(gameFacade: widget.gameFacade),
+            builder: (context) => const GameScreen(),
           ),
         );
       },

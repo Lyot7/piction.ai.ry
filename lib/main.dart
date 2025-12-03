@@ -4,28 +4,33 @@ import 'themes/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/join_room_screen.dart';
-import 'services/game_facade.dart';
 import 'services/deep_link_service.dart';
 import 'models/player.dart';
+import 'di/locator.dart';
+import 'interfaces/facades/auth_facade_interface.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Créer les services (injection de dépendances)
-  final gameFacade = GameFacade();
+  // 1. Initialiser le conteneur DI (facades SOLID)
+  try {
+    await Locator.initialize();
+    debugPrint('✅ DI Container initialisé');
+  } catch (e) {
+    debugPrint('⚠️ Erreur initialisation DI: $e');
+  }
+
+  // 2. Créer le service de deep linking
   final deepLinkService = DeepLinkService();
 
-  // Initialiser les services - mais sans bloquer le démarrage
+  // 3. Initialiser le service de deep linking
   try {
-    await gameFacade.initialize();
     await deepLinkService.initialize();
   } catch (e) {
-    // Continuer même en cas d'erreur d'initialisation
-    debugPrint('Erreur initialisation services: $e');
+    debugPrint('Erreur initialisation DeepLinkService: $e');
   }
 
   runApp(PictionApp(
-    gameFacade: gameFacade,
     deepLinkService: deepLinkService,
   ));
 }
@@ -33,9 +38,9 @@ void main() async {
 /// Wrapper pour fermer le clavier en tapant en dehors
 class KeyboardDismissWrapper extends StatelessWidget {
   final Widget child;
-  
+
   const KeyboardDismissWrapper({super.key, required this.child});
-  
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -48,13 +53,12 @@ class KeyboardDismissWrapper extends StatelessWidget {
 }
 
 /// Application principale Piction.ia.ry
+/// Migré vers Locator (SOLID DIP) - n'utilise plus GameFacade
 class PictionApp extends StatelessWidget {
-  final GameFacade gameFacade;
   final DeepLinkService deepLinkService;
 
   const PictionApp({
     super.key,
-    required this.gameFacade,
     required this.deepLinkService,
   });
 
@@ -65,23 +69,19 @@ class PictionApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       home: KeyboardDismissWrapper(
         child: AuthWrapper(
-          gameFacade: gameFacade,
           deepLinkService: deepLinkService,
         ),
       ),
       debugShowCheckedModeBanner: false,
       routes: {
-        '/home': (context) => KeyboardDismissWrapper(
-          child: HomeScreen(gameFacade: gameFacade),
+        '/home': (context) => const KeyboardDismissWrapper(
+          child: HomeScreen(),
         ),
-        '/auth': (context) => KeyboardDismissWrapper(
-          child: AuthScreen(gameFacade: gameFacade),
+        '/auth': (context) => const KeyboardDismissWrapper(
+          child: AuthScreen(),
         ),
-        '/join': (context) => KeyboardDismissWrapper(
-          child: JoinRoomScreen(
-            gameFacade: gameFacade,
-            deepLinkService: deepLinkService,
-          ),
+        '/join': (context) => const KeyboardDismissWrapper(
+          child: JoinRoomScreen(),
         ),
       },
       onGenerateRoute: (settings) {
@@ -92,8 +92,6 @@ class PictionApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (context) => KeyboardDismissWrapper(
                 child: JoinRoomScreen(
-                  gameFacade: gameFacade,
-                  deepLinkService: deepLinkService,
                   initialRoomId: roomId,
                 ),
               ),
@@ -107,13 +105,12 @@ class PictionApp extends StatelessWidget {
 }
 
 /// Wrapper pour gérer l'authentification
+/// Migré vers Locator (SOLID DIP) - utilise IAuthFacade via Locator
 class AuthWrapper extends StatefulWidget {
-  final GameFacade gameFacade;
   final DeepLinkService deepLinkService;
 
   const AuthWrapper({
     super.key,
-    required this.gameFacade,
     required this.deepLinkService,
   });
 
@@ -128,6 +125,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   String? _error;
   late final StreamSubscription<Player?> _playerSubscription;
 
+  IAuthFacade get _authFacade => Locator.get<IAuthFacade>();
+
   @override
   void initState() {
     super.initState();
@@ -137,7 +136,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   void _listenToAuthChanges() {
-    _playerSubscription = widget.gameFacade.playerStream.listen((player) {
+    _playerSubscription = _authFacade.playerStream.listen((player) {
       if (mounted) {
         setState(() {
           _isLoggedIn = player != null;
@@ -156,7 +155,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     try {
       // Immediate state update - no artificial delays
       setState(() {
-        _isLoggedIn = widget.gameFacade.currentPlayer != null;
+        _isLoggedIn = _authFacade.currentPlayer != null;
         _isLoading = false;
       });
     } catch (e) {
@@ -171,7 +170,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         final pendingRoomId = widget.deepLinkService.getPendingRoomId();
-        
+
         if (pendingRoomId != null) {
           setState(() {
             _pendingRoomId = pendingRoomId;
@@ -231,8 +230,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) => JoinRoomScreen(
-                gameFacade: widget.gameFacade,
-                deepLinkService: widget.deepLinkService,
                 initialRoomId: roomId,
               ),
               transitionDuration: const Duration(milliseconds: 150),
@@ -243,11 +240,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         });
       }
-      return HomeScreen(gameFacade: widget.gameFacade);
+      return const HomeScreen();
     } else {
       // Si pas connecté, montrer l'écran d'auth avec indication du lien en attente
       return AuthScreen(
-        gameFacade: widget.gameFacade,
         pendingRoomId: _pendingRoomId,
         onAuthSuccess: () {
           setState(() {
